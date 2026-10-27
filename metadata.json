@@ -1,0 +1,6 @@
+{
+  "name": "Offline Grocery Shop POS",
+  "description": "Complete offline-first desktop grocery shop management & POS system with inventory, customer/supplier dues, expenses, thermal receipts, and audit logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
