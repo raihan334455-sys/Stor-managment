@@ -13,6 +13,9 @@ import {
   ShieldAlert,
   Trash2,
   RotateCcw,
+  Cloud,
+  CloudUpload,
+  ArrowRight,
 } from 'lucide-react';
 import { DatabaseBackup as IDatabaseBackup } from '../../types';
 
@@ -209,6 +212,35 @@ export const BackupManagement: React.FC = () => {
           <div className="text-xl font-bold font-mono text-slate-900 mt-1">{auditLogs.length} Events</div>
           <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">Security Trail</span>
         </div>
+      </div>
+
+      {/* Google Drive Cloud Integration Banner */}
+      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 rounded-2xl p-5 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white shrink-0 shadow-inner">
+            <Cloud className="w-6 h-6 text-blue-200" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-sm tracking-tight text-white">Google Drive Cloud Synchronization</h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                Connected
+              </span>
+            </div>
+            <p className="text-xs text-blue-100">
+              Sync database backups directly to your personal Google Drive and restore them from anywhere.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setActiveTab('drive')}
+          className="px-4 py-2.5 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all whitespace-nowrap cursor-pointer shrink-0"
+        >
+          <CloudUpload className="w-4 h-4" />
+          <span>Open Google Drive Sync</span>
+          <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+        </button>
       </div>
 
       {/* Main Actions Grid */}

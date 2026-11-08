@@ -17,6 +17,7 @@ import { ReportsManagement } from './components/Reports/ReportsManagement';
 import { UsersManagement } from './components/Users/UsersManagement';
 import { BackupManagement } from './components/Backup/BackupManagement';
 import { AuditLogsManagement } from './components/Audit/AuditLogsManagement';
+import { GoogleDriveManagement } from './components/GoogleDrive/GoogleDriveManagement';
 import { LoginScreen } from './components/Auth/LoginScreen';
 import {
   LayoutDashboard,
@@ -672,7 +673,7 @@ const AppContent: React.FC = () => {
 
   const renderTabContent = () => {
     const isVisitor = activeUser.role === 'visitor';
-    const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit'];
+    const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit', 'drive'];
 
     if (isVisitor && visitorRestrictedTabs.includes(activeTab)) {
       return (
@@ -733,6 +734,8 @@ const AppContent: React.FC = () => {
         return <UsersManagement />;
       case 'backup':
         return <BackupManagement />;
+      case 'drive':
+        return <GoogleDriveManagement />;
       case 'audit':
         return <AuditLogsManagement />;
       default:

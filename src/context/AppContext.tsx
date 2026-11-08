@@ -153,7 +153,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Automatically redirect visitor away from restricted tabs
   useEffect(() => {
     if (activeUser?.role === 'visitor') {
-      const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit'];
+      const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit', 'drive'];
       if (visitorRestrictedTabs.includes(activeTab)) {
         setActiveTab('pos');
       }

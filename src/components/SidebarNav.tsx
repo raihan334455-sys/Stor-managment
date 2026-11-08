@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Lock,
   LogOut,
+  Cloud,
 } from 'lucide-react';
 
 export const SidebarNav: React.FC = () => {
@@ -88,12 +89,13 @@ export const SidebarNav: React.FC = () => {
     { id: 'users', label: 'Users & Security', icon: ShieldAlert },
     { id: 'settings', label: 'Store Settings', icon: Settings },
     { id: 'backup', label: 'Backup & Restore', icon: DatabaseBackup },
+    { id: 'drive', label: 'Google Drive Sync', icon: Cloud },
     { id: 'audit', label: 'Audit Logs', icon: History },
   ];
 
   // Restricted tabs that visitor cannot view
   const isVisitor = activeUser.role === 'visitor';
-  const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit'];
+  const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit', 'drive'];
   const visibleNavItems = navItems.filter(
     (item) => !isVisitor || !visitorRestrictedTabs.includes(item.id)
   );
