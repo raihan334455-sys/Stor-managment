@@ -13,10 +13,37 @@ import {
   ArrowDownRight,
   PieChart,
   Percent,
+  ShieldAlert,
+  ShoppingCart,
 } from 'lucide-react';
 
 export const ReportsManagement: React.FC = () => {
-  const { sales, expenses, products, customers, store } = useApp();
+  const { sales, expenses, products, customers, store, activeUser, setActiveTab } = useApp();
+
+  if (activeUser?.role === 'visitor') {
+    return (
+      <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
+        <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+            ভিজিটর অ্যাকাউন্টে রিপোর্টস ও লাভ-ক্ষতি (Reports & Profit/Loss) দেখার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
+          </p>
+        </div>
+        <div className="pt-2">
+          <button
+            onClick={() => setActiveTab('pos')}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const [dateFilter, setDateFilter] = useState<'today' | '7days' | 'month' | 'all'>('all');
 

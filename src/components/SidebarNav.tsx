@@ -91,6 +91,13 @@ export const SidebarNav: React.FC = () => {
     { id: 'audit', label: 'Audit Logs', icon: History },
   ];
 
+  // Restricted tabs that visitor cannot view
+  const isVisitor = activeUser.role === 'visitor';
+  const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit'];
+  const visibleNavItems = navItems.filter(
+    (item) => !isVisitor || !visitorRestrictedTabs.includes(item.id)
+  );
+
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col shrink-0 no-print select-none">
       {/* Sidebar Header Brand / App Title */}
@@ -105,7 +112,7 @@ export const SidebarNav: React.FC = () => {
       </div>
 
       <div className="p-3 overflow-y-auto flex-1 space-y-1">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (

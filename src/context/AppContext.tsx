@@ -150,6 +150,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeUser, setActiveUser] = useState<User>(initialUser);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(Boolean(savedUserId));
 
+  // Automatically redirect visitor away from restricted tabs
+  useEffect(() => {
+    if (activeUser?.role === 'visitor') {
+      const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit'];
+      if (visitorRestrictedTabs.includes(activeTab)) {
+        setActiveTab('pos');
+      }
+    }
+  }, [activeUser, activeTab]);
+
 
   const [products, setProducts] = useState<Product[]>(DBStorage.getProducts());
   const [categories, setCategories] = useState<Category[]>(DBStorage.getCategories());
@@ -1076,7 +1086,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         phone: '+880 1700-000000',
         email: 'visitor@superstore.bd',
         active: true,
-        permissions: ['pos_sale', 'product_manage', 'customer_manage', 'due_manage', 'reports_view'],
+        permissions: ['pos_sale', 'product_manage', 'customer_manage', 'due_manage'],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         sync_status: 'synced',

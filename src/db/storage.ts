@@ -114,7 +114,17 @@ export class DBStorage {
 
   // Users
   static getUsers(): User[] {
-    return getItem(KEYS.USERS, INITIAL_USERS);
+    const list = getItem(KEYS.USERS, INITIAL_USERS);
+    return list.map((u) => {
+      if (u.id === 'user_demo' || u.username === 'demo') {
+        return {
+          ...u,
+          role: 'visitor',
+          permissions: ['pos_sale', 'product_manage', 'customer_manage', 'due_manage'],
+        };
+      }
+      return u;
+    });
   }
   static saveUsers(users: User[]): void {
     setItem(KEYS.USERS, users);

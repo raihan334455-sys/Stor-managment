@@ -60,7 +60,6 @@ export const INITIAL_USERS: User[] = [
       'product_manage',
       'customer_manage',
       'due_manage',
-      'reports_view',
     ],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',

@@ -346,10 +346,35 @@ const SalesHistoryView: React.FC = () => {
 /*                                SETTINGS VIEW                              */
 /* -------------------------------------------------------------------------- */
 const SettingsView: React.FC = () => {
-  const { store, updateStore, clearTransactionHistory, wipeAllData, resetToDemoData } = useApp();
+  const { store, updateStore, clearTransactionHistory, wipeAllData, resetToDemoData, activeUser, setActiveTab } = useApp();
   const [form, setForm] = useState(store);
   const [savedMsg, setSavedMsg] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  if (activeUser?.role === 'visitor') {
+    return (
+      <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
+        <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+            ভিজিটর অ্যাকাউন্টে স্টোর সেটিংস দেখার বা পরিবর্তন করার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
+          </p>
+        </div>
+        <div className="pt-2">
+          <button
+            onClick={() => setActiveTab('pos')}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
   const [confirmModal, setConfirmModal] = useState<{
     type: 'clear_history' | 'wipe_all' | 'reset_demo';
     title: string;
@@ -491,79 +516,81 @@ const SettingsView: React.FC = () => {
         </div>
       </form>
 
-      {/* Danger Zone: Data Remove & History Reset Operations */}
-      <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
-          <ShieldAlert className="w-5 h-5 text-rose-600" />
-          <span>ডেটা মুছে ফেলা ও হিস্ট্রি রিসেট (Data Management & Reset Zone)</span>
-        </div>
-        <p className="text-xs text-slate-500">
-          আপনার ব্যবসার সুবিধার্থে টেস্ট বিক্রয় হিস্ট্রি মুছে ফেলা অথবা নতুন লাইভ শপ শুরুর জন্য নিচের অপশনগুলো ব্যবহার করুন।
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-          {/* Card 1: Clear Transaction History Only (Keep Products) */}
-          <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl space-y-3 flex flex-col justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                <RotateCcw className="w-4 h-4 text-amber-600" />
-                <span>সমস্ত বিক্রয় ও লেনদেন হিস্ট্রি মুছুন</span>
-              </div>
-              <p className="text-[11px] text-amber-800 leading-relaxed">
-                পণ্য ক্যাটালগ ও ক্যাটাগরি <strong>ঠিক থাকবে</strong>। শুধু সমস্ত টেস্ট বিক্রয়, দেনা-পাওনা ledger, খরচ, ও ক্যাশ ড্রয়ার হিস্ট্রি মুছে ০ করা হবে।
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmModal({
-                  type: 'clear_history',
-                  title: 'বিক্রয় ও লেনদেন হিস্ট্রি মুছে ফেলা নিশ্চিত করুন',
-                  description: 'এই অপশনে ক্লিক করলে আপনার সমস্ত বিক্রয় রেকর্ড, কাস্টমার বাকি লেজার, সাপ্লায়ার বাকি লেজার এবং খরচের হিস্ট্রি মুছে যাবে। তবে পণ্যের তালিকা (Products Catalog) অক্ষত থাকবে।',
-                  keyword: 'CLEAR',
-                });
-                setConfirmInput('');
-              }}
-              className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Clear Transaction History</span>
-            </button>
+      {/* Danger Zone: Data Remove & History Reset Operations (Admin Only) */}
+      {activeUser.role === 'admin' && (
+        <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
+            <ShieldAlert className="w-5 h-5 text-rose-600" />
+            <span>ডেটা মুছে ফেলা ও হিস্ট্রি রিসেট (Data Management & Reset Zone)</span>
           </div>
+          <p className="text-xs text-slate-500">
+            আপনার ব্যবসার সুবিধার্থে টেস্ট বিক্রয় হিস্ট্রি মুছে ফেলা অথবা নতুন লাইভ শপ শুরুর জন্য নিচের অপশনগুলো ব্যবহার করুন।
+          </p>
 
-          {/* Card 2: Wipe All Data Clean (Fresh Store Launch) */}
-          <div className="p-4 bg-rose-50/60 border border-rose-200 rounded-xl space-y-3 flex flex-col justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-rose-900 font-bold text-xs">
-                <Trash2 className="w-4 h-4 text-rose-600" />
-                <span>সব ডেটা মুছে একদম নতুন শুরু (Wipe All Data)</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            {/* Card 1: Clear Transaction History Only (Keep Products) */}
+            <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl space-y-3 flex flex-col justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                  <RotateCcw className="w-4 h-4 text-amber-600" />
+                  <span>সমস্ত বিক্রয় ও লেনদেন হিস্ট্রি মুছুন</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  পণ্য ক্যাটালগ ও ক্যাটাগরি <strong>ঠিক থাকবে</strong>। শুধু সমস্ত টেস্ট বিক্রয়, দেনা-পাওনা ledger, খরচ, ও ক্যাশ ড্রয়ার হিস্ট্রি মুছে ০ করা হবে।
+                </p>
               </div>
-              <p className="text-[11px] text-rose-800 leading-relaxed">
-                দোকানের পণ্য, ক্যাটাগরি, কাস্টমার, বিক্রয় সব কিছু মুছে সম্পূর্ণ খালি ডাটাবেস নিয়ে ফ্রেশ বিজনেস শুরু করুন।
-              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmModal({
+                    type: 'clear_history',
+                    title: 'বিক্রয় ও লেনদেন হিস্ট্রি মুছে ফেলা নিশ্চিত করুন',
+                    description: 'এই অপশনে ক্লিক করলে আপনার সমস্ত বিক্রয় রেকর্ড, কাস্টমার বাকি লেজার, সাপ্লায়ার বাকি লেজার এবং খরচের হিস্ট্রি মুছে যাবে। তবে পণ্যের তালিকা (Products Catalog) অক্ষত থাকবে।',
+                    keyword: 'CLEAR',
+                  });
+                  setConfirmInput('');
+                }}
+                className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Clear Transaction History</span>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmModal({
-                  type: 'wipe_all',
-                  title: 'সম্পূর্ণ স্টোর ডেটা ওয়াইপ নিশ্চিত করুন',
-                  description: 'এটি আপনার দোকানের পণ্য তালিকা, স্টক, কাস্টমার, বিক্রয় সহ সমস্ত ডেটা চিরতরে মুছে ফেলবে এবং একদম খালি স্টোর তৈরি করবে।',
-                  keyword: 'WIPE',
-                });
-                setConfirmInput('');
-              }}
-              className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Wipe All Data (Fresh Start)</span>
-            </button>
+
+            {/* Card 2: Wipe All Data Clean (Fresh Store Launch) */}
+            <div className="p-4 bg-rose-50/60 border border-rose-200 rounded-xl space-y-3 flex flex-col justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-rose-900 font-bold text-xs">
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  <span>সব ডেটা মুছে একদম নতুন শুরু (Wipe All Data)</span>
+                </div>
+                <p className="text-[11px] text-rose-800 leading-relaxed">
+                  দোকানের পণ্য, ক্যাটাগরি, কাস্টমার, বিক্রয় সব কিছু মুছে সম্পূর্ণ খালি ডাটাবেস নিয়ে ফ্রেশ বিজনেস শুরু করুন।
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmModal({
+                    type: 'wipe_all',
+                    title: 'সম্পূর্ণ স্টোর ডেটা ওয়াইপ নিশ্চিত করুন',
+                    description: 'এটি আপনার দোকানের পণ্য তালিকা, স্টক, কাস্টমার, বিক্রয় সহ সমস্ত ডেটা চিরতরে মুছে ফেলবে এবং একদম খালি স্টোর তৈরি করবে।',
+                    keyword: 'WIPE',
+                  });
+                  setConfirmInput('');
+                }}
+                className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Wipe All Data (Fresh Start)</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Safety Confirmation Modal */}
-      {confirmModal && (
+      {/* Safety Confirmation Modal (Admin Only) */}
+      {activeUser.role === 'admin' && confirmModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
@@ -637,13 +664,41 @@ const GenericTabPlaceholder: React.FC<{ title: string; description: string }> = 
 /*                                MAIN APPLICATION                           */
 /* -------------------------------------------------------------------------- */
 const AppContent: React.FC = () => {
-  const { activeTab, printableReceipt, setPrintableReceipt, isAuthenticated } = useApp();
+  const { activeTab, setActiveTab, printableReceipt, setPrintableReceipt, isAuthenticated, activeUser } = useApp();
 
   if (!isAuthenticated) {
     return <LoginScreen />;
   }
 
   const renderTabContent = () => {
+    const isVisitor = activeUser.role === 'visitor';
+    const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit'];
+
+    if (isVisitor && visitorRestrictedTabs.includes(activeTab)) {
+      return (
+        <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
+          <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+              ভিজিটর অ্যাকাউন্টে এই মডিউলটি দেখার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে এবং পরিচালনা করতে পারবেন।
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => setActiveTab('pos')}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'dashboard':
         return <DashboardView />;

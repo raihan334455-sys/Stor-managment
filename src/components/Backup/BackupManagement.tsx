@@ -29,7 +29,33 @@ export const BackupManagement: React.FC = () => {
     clearTransactionHistory,
     wipeAllData,
     resetToDemoData,
+    activeUser,
+    setActiveTab,
   } = useApp();
+
+  if (activeUser?.role === 'visitor') {
+    return (
+      <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
+        <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+            ভিজিটর অ্যাকাউন্টে ব্যাকআপ ও রিস্টোর সেকশন দেখার অনুমতি নেই। কেবল অ্যাডমিন এই অপশন দেখতে পারবেন।
+          </p>
+        </div>
+        <div className="pt-2">
+          <button
+            onClick={() => setActiveTab('pos')}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -241,12 +267,13 @@ export const BackupManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Danger Zone: Data Remove & History Reset Operations */}
-      <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
-          <ShieldAlert className="w-5 h-5 text-rose-600" />
-          <span>ডেটা মুছে ফেলা ও হিস্ট্রি রিসেট (All History & Data Removal Zone)</span>
-        </div>
+      {/* Danger Zone: Data Remove & History Reset Operations (Admin Only) */}
+      {activeUser.role === 'admin' && (
+        <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
+            <ShieldAlert className="w-5 h-5 text-rose-600" />
+            <span>ডেটা মুছে ফেলা ও হিস্ট্রি রিসেট (All History & Data Removal Zone)</span>
+          </div>
         <p className="text-xs text-slate-500">
           আপনার প্রয়োজন অনুযায়ী শুধুমাত্র বিক্রয় ও বাকি হিস্ট্রি মুছুন অথবা নতুন লাইভ ব্যবসা শুরুর জন্য সম্পূর্ণ স্টোর ওয়াইপ করুন।
         </p>
@@ -328,9 +355,10 @@ export const BackupManagement: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Confirmation Modal */}
-      {showResetConfirm && (
+      {activeUser.role === 'admin' && showResetConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
