@@ -15,17 +15,34 @@ import {
   X,
   History,
   DollarSign,
+  BellRing,
+  MessageCircle,
+  MessageSquare,
+  Calendar,
+  Mail,
 } from 'lucide-react';
 import { Customer, PaymentMethodType } from '../../types';
+import { DueAlertModal } from './DueAlertModal';
+import {
+  buildDueReminderMessage,
+  buildSmsUrl,
+  buildTelUrl,
+  buildWhatsAppUrl,
+  isCustomerDueOverdue,
+  wasAlertedToday,
+} from '../../utils/dueAlerts';
 
 export const CustomerManagement: React.FC = () => {
-  const { activeTab, customers, customerDues, sales, store, payCustomerDue, saveCustomer } = useApp();
+  const { activeTab, customers, customerDues, sales, store, payCustomerDue, saveCustomer, logDueAlert } = useApp();
   const [search, setSearch] = useState<string>('');
-  const [filterDueOnly, setFilterDueOnly] = useState<boolean>(activeTab === 'customer_due');
+  const [dueFilterMode, setDueFilterMode] = useState<'all' | 'due' | 'overdue' | 'unalerted'>(
+    activeTab === 'customer_due' ? 'due' : 'all'
+  );
+  const [alertCustomer, setAlertCustomer] = useState<Customer | null>(null);
 
   React.useEffect(() => {
     if (activeTab === 'customer_due') {
-      setFilterDueOnly(true);
+      setDueFilterMode('due');
     }
   }, [activeTab]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -42,14 +59,35 @@ export const CustomerManagement: React.FC = () => {
   const [custName, setCustName] = useState<string>('');
   const [custMobile, setCustMobile] = useState<string>('');
   const [custAddress, setCustAddress] = useState<string>('');
+  const [custEmail, setCustEmail] = useState<string>('');
+  const [custPromiseDate, setCustPromiseDate] = useState<string>('');
   const [custType, setCustType] = useState<'regular' | 'vip' | 'wholesale'>('regular');
 
+  const alertDaysThreshold = store.due_alert_days || 7;
+  const dueCustomers = customers.filter((c) => (c.total_due_amount || 0) > 0);
+  const overdueCustomers = dueCustomers.filter(
+    (c) => isCustomerDueOverdue(c, alertDaysThreshold).overdue
+  );
+  const unalertedTodayCustomers = dueCustomers.filter((c) => !wasAlertedToday(c));
+
   const filteredCustomers = customers.filter((c) => {
-    const matchesDue = !filterDueOnly || c.total_due_amount > 0;
+    const hasDue = (c.total_due_amount || 0) > 0;
+    const isOverdue = isCustomerDueOverdue(c, alertDaysThreshold).overdue;
+    const notAlertedToday = hasDue && !wasAlertedToday(c);
+
+    const matchesFilter =
+      dueFilterMode === 'all' ||
+      (dueFilterMode === 'due' && hasDue) ||
+      (dueFilterMode === 'overdue' && isOverdue) ||
+      (dueFilterMode === 'unalerted' && notAlertedToday);
+
     const q = search.toLowerCase();
     const matchesQuery =
-      !q || c.name.toLowerCase().includes(q) || c.mobile.includes(q) || c.address?.toLowerCase().includes(q);
-    return matchesDue && matchesQuery;
+      !q ||
+      c.name.toLowerCase().includes(q) ||
+      c.mobile.includes(q) ||
+      c.address?.toLowerCase().includes(q);
+    return matchesFilter && matchesQuery;
   });
 
   const totalAllCustomerDue = customers.reduce((acc, c) => acc + c.total_due_amount, 0);
@@ -83,13 +121,15 @@ export const CustomerManagement: React.FC = () => {
 
   const handleSaveNewCustomer = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!custName || !custMobile) return;
+    if (!custName.trim() || !custMobile.trim()) return;
 
     saveCustomer({
       id: `cust_${Date.now()}`,
-      name: custName,
-      mobile: custMobile,
-      address: custAddress,
+      name: custName.trim(),
+      mobile: custMobile.trim(),
+      address: custAddress.trim(),
+      email: custEmail.trim() || undefined,
+      due_promise_date: custPromiseDate.trim() || undefined,
       customer_type: custType,
       total_orders: 0,
       total_purchase_amount: 0,
@@ -106,6 +146,8 @@ export const CustomerManagement: React.FC = () => {
     setCustName('');
     setCustMobile('');
     setCustAddress('');
+    setCustEmail('');
+    setCustPromiseDate('');
   };
 
   return (
@@ -182,23 +224,36 @@ export const CustomerManagement: React.FC = () => {
               />
             </div>
 
-            <button
-              onClick={() => setFilterDueOnly(!filterDueOnly)}
-              className={`w-full py-1.5 px-3 rounded-xl text-xs font-semibold border flex items-center justify-between transition-colors ${
-                filterDueOnly
-                  ? 'bg-rose-50 border-rose-300 text-rose-800'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <span>Filter Only Customers With Due</span>
-              <span className="font-mono font-bold text-[10px]">{filterDueOnly ? 'ACTIVE' : 'OFF'}</span>
-            </button>
+            {/* Quick Due & Overdue Filter Pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              {[
+                { id: 'all', label: `All (${customers.length})` },
+                { id: 'due', label: `Due (${dueCustomers.length})` },
+                { id: 'overdue', label: `Overdue (${overdueCustomers.length})` },
+                { id: 'unalerted', label: `Alert Pending (${unalertedTodayCustomers.length})` },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setDueFilterMode(tab.id as any)}
+                  className={`py-1.5 px-2 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer truncate ${
+                    dueFilterMode === tab.id
+                      ? 'bg-[#ec1f73] border-[#ec1f73] text-white shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* List Cards */}
           <div className="space-y-2 overflow-y-auto max-h-[500px] pr-1">
             {filteredCustomers.map((c) => {
               const isSelected = activeCustomer?.id === c.id;
+              const overdueCheck = isCustomerDueOverdue(c, alertDaysThreshold);
+              const alerted = wasAlertedToday(c);
               return (
                 <div
                   key={c.id}
@@ -209,15 +264,27 @@ export const CustomerManagement: React.FC = () => {
                       : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-xs text-slate-800">{c.name}</span>
-                    <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-bold text-xs text-slate-800 truncate">{c.name}</span>
+                    <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
                       {c.mobile}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] pt-1">
-                    <span className="text-slate-500">Orders: {c.total_orders}</span>
+                  <div className="flex items-center justify-between text-[11px] pt-1 gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500">Orders: {c.total_orders}</span>
+                      {overdueCheck.overdue && (
+                        <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-bold">
+                          OVERDUE
+                        </span>
+                      )}
+                      {alerted && (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[9px] font-bold">
+                          Alerted
+                        </span>
+                      )}
+                    </div>
                     {c.total_due_amount > 0 ? (
                       <span className="font-bold font-mono text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
                         Due: {store.currency_symbol}
@@ -230,6 +297,11 @@ export const CustomerManagement: React.FC = () => {
                 </div>
               );
             })}
+            {filteredCustomers.length === 0 && (
+              <div className="py-10 text-center text-xs text-slate-400">
+                No customers match this filter.
+              </div>
+            )}
           </div>
         </div>
 
@@ -238,43 +310,120 @@ export const CustomerManagement: React.FC = () => {
           {activeCustomer ? (
             <>
               {/* Customer Header Info */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900">{activeCustomer.name}</h2>
-                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                      {activeCustomer.customer_type}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-slate-500 mt-1">
-                    <span className="flex items-center gap-1 font-mono">
-                      <Phone className="w-3.5 h-3.5 text-slate-400" />
-                      {activeCustomer.mobile}
-                    </span>
-                    {activeCustomer.address && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                        {activeCustomer.address}
+              <div className="flex flex-col gap-4 pb-4 border-b border-slate-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-bold text-slate-900">{activeCustomer.name}</h2>
+                      <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                        {activeCustomer.customer_type}
                       </span>
-                    )}
+                      {isCustomerDueOverdue(activeCustomer, alertDaysThreshold).overdue && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                          {isCustomerDueOverdue(activeCustomer, alertDaysThreshold).reason}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-slate-500 mt-1 flex-wrap">
+                      <span className="flex items-center gap-1 font-mono">
+                        <Phone className="w-3.5 h-3.5 text-slate-400" />
+                        {activeCustomer.mobile}
+                      </span>
+                      {activeCustomer.address && (
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                          {activeCustomer.address}
+                        </span>
+                      )}
+                      {activeCustomer.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="w-3.5 h-3.5 text-slate-400" />
+                          {activeCustomer.email}
+                        </span>
+                      )}
+                      {activeCustomer.due_promise_date && (
+                        <span className="flex items-center gap-1 text-[#5b46b5] font-semibold">
+                          <Calendar className="w-3.5 h-3.5" />
+                          Due Date: {activeCustomer.due_promise_date}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Due Payment Button */}
+                  {activeCustomer.total_due_amount > 0 ? (
+                    <button
+                      onClick={() => handleOpenPayDue(activeCustomer)}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow flex items-center gap-2 transition-all shrink-0 cursor-pointer"
+                    >
+                      <DollarSign className="w-4 h-4" />
+                      <span>Pay Due ({store.currency_symbol}{activeCustomer.total_due_amount})</span>
+                    </button>
+                  ) : (
+                    <div className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>No Outstanding Due</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Due Payment Button */}
-                {activeCustomer.total_due_amount > 0 ? (
-                  <button
-                    onClick={() => handleOpenPayDue(activeCustomer)}
-                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow flex items-center gap-2 transition-all shrink-0"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    <span>Pay Due (৳{activeCustomer.total_due_amount})</span>
-                  </button>
-                ) : (
-                  <div className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>No Outstanding Due</span>
-                  </div>
-                )}
+                {/* Multi-Channel Due Alert Quick Action Strip */}
+                {activeCustomer.total_due_amount > 0 && (() => {
+                  const quickMsg = buildDueReminderMessage({
+                    customer: activeCustomer,
+                    store,
+                    lang: store.language === 'bn' ? 'bn' : 'both',
+                  });
+                  return (
+                    <div className="p-3 rounded-2xl bg-[#f7f7fb] border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-bold text-[#1e1b3a] flex items-center gap-2">
+                        <BellRing className="w-4 h-4 text-[#ec1f73]" />
+                        <span>Send Due Alert:</span>
+                        {activeCustomer.last_alert_sent_at && (
+                          <span className="text-[10px] font-normal text-slate-500">
+                            Last: {activeCustomer.last_alert_channel?.toUpperCase()} ({new Date(activeCustomer.last_alert_sent_at).toLocaleDateString()})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <a
+                          href={buildWhatsAppUrl(activeCustomer.mobile, quickMsg)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => logDueAlert(activeCustomer.id, 'whatsapp', 'Quick ledger WhatsApp alert')}
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>WhatsApp</span>
+                        </a>
+                        <a
+                          href={buildSmsUrl(activeCustomer.mobile, quickMsg)}
+                          onClick={() => logDueAlert(activeCustomer.id, 'sms', 'Quick ledger SMS alert')}
+                          className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>SMS</span>
+                        </a>
+                        <a
+                          href={buildTelUrl(activeCustomer.mobile)}
+                          onClick={() => logDueAlert(activeCustomer.id, 'call', 'Quick ledger Call')}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#5b46b5] hover:bg-[#4b389b] text-white font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>Call</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setAlertCustomer(activeCustomer)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#ec1f73] hover:bg-[#d61665] text-white font-bold text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <BellRing className="w-3.5 h-3.5" />
+                          <span>Email / Other / Edit Msg</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Customer Stats Summary */}
@@ -492,6 +641,28 @@ export const CustomerManagement: React.FC = () => {
                 />
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email (Optional)</label>
+                  <input
+                    type="email"
+                    value={custEmail}
+                    onChange={(e) => setCustEmail(e.target.value)}
+                    placeholder="customer@email.com"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Promised Pay Date</label>
+                  <input
+                    type="date"
+                    value={custPromiseDate}
+                    onChange={(e) => setCustPromiseDate(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Address</label>
                 <input
@@ -521,6 +692,14 @@ export const CustomerManagement: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* DUE CUSTOMER ALERT MODAL */}
+      {alertCustomer && (
+        <DueAlertModal
+          customer={alertCustomer}
+          onClose={() => setAlertCustomer(null)}
+        />
       )}
     </div>
   );

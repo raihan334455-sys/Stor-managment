@@ -22,8 +22,27 @@ import {
   HeldCart,
   PaymentMethodType,
   SplitPaymentDetail,
+  PermissionKey,
+  DueAlertChannel,
 } from '../types';
 import { DBStorage } from '../db/storage';
+import { setCachedToken } from '../services/googleDriveAuth';
+import {
+  canAccessTab,
+  checkLoginThrottle,
+  clearLoginAttempts,
+  clearSignedSession,
+  createSignedSession,
+  getPermissionsForRole,
+  hashPin,
+  hasPermission,
+  isHashedPin,
+  recordFailedLoginAttempt,
+  touchSignedSession,
+  verifyPin,
+  verifySignedSession,
+  verifyUsersDirectoryIntegrity,
+} from '../utils/security';
 
 interface AppContextType {
   activeTab: string;
@@ -104,8 +123,10 @@ interface AppContextType {
   archiveProduct: (product_id: string) => void;
 
   saveCustomer: (customer: Customer) => Customer;
+  logDueAlert: (customerId: string, channel: DueAlertChannel, notes?: string) => void;
   saveSupplier: (supplier: Supplier) => Supplier;
-  saveUser: (user: User) => void;
+  saveUser: (user: User, plainPinToSet?: string) => Promise<void>;
+  deleteUser: (userId: string) => void;
   saveCategory: (category: Category) => void;
 
   addAuditLog: (
@@ -119,46 +140,67 @@ interface AppContextType {
 
   refreshData: () => void;
 
-  // Auth & Session
+  // Auth, Session & RBAC
   isAuthenticated: boolean;
-  loginWithPin: (userIdOrUsername: string, pin: string) => { success: boolean; message?: string };
+  isStorageReady: boolean;
+  requiresPinChange: boolean;
+  loginWithPin: (
+    userIdOrUsername: string,
+    pin: string
+  ) => Promise<{ success: boolean; message?: string; lockedSeconds?: number }>;
+  changeOwnPin: (
+    currentPin: string,
+    newPin: string
+  ) => Promise<{ success: boolean; message?: string }>;
+  checkPermission: (perm: PermissionKey) => boolean;
   logout: () => void;
   lockTerminal: () => void;
 
   // History & Data Reset Actions
   clearTransactionHistory: () => void;
   wipeAllData: () => void;
-  resetToDemoData: () => void;
+  resetToDemoData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  DBStorage.init();
+const DEFAULT_BOOT_USER: User = {
+  id: 'user_boot_locked',
+  name: 'Locked Terminal',
+  username: 'locked',
+  pin: '',
+  role: 'visitor',
+  active: false,
+  permissions: [],
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  sync_status: 'synced',
+  branch_id: 'branch_dhaka_main',
+  device_id: 'pos_terminal_01',
+};
 
-  const [activeTab, setActiveTab] = useState<string>('pos');
+export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [isStorageReady, setIsStorageReady] = useState<boolean>(false);
+  const [activeTab, setActiveTabState] = useState<string>('pos');
   const [store, setStore] = useState<StoreSettings>(DBStorage.getStore());
   const [users, setUsers] = useState<User[]>(DBStorage.getUsers());
-  
-  const savedUserId = DBStorage.getSessionUserId();
-  const initialUser =
-    users.find((u) => u.id === savedUserId) ||
-    users.find((u) => u.username === 'demo') ||
-    users.find((u) => u.role === 'visitor') ||
-    users.find((u) => u.role === 'admin') ||
-    users[0];
-  const [activeUser, setActiveUser] = useState<User>(initialUser);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(Boolean(savedUserId));
+  const [activeUser, setActiveUser] = useState<User>(DEFAULT_BOOT_USER);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
-  // Automatically redirect visitor away from restricted tabs
-  useEffect(() => {
-    if (activeUser?.role === 'visitor') {
-      const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit', 'drive'];
-      if (visitorRestrictedTabs.includes(activeTab)) {
-        setActiveTab('pos');
-      }
+  const setActiveTab = (tab: string) => {
+    if (isAuthenticated && !canAccessTab(activeUser, tab)) {
+      setActiveTabState('pos');
+      return;
     }
-  }, [activeUser, activeTab]);
+    setActiveTabState(tab);
+  };
+
+  // Enforce RBAC tab protection whenever activeUser or activeTab changes
+  useEffect(() => {
+    if (isAuthenticated && activeUser && !canAccessTab(activeUser, activeTab)) {
+      setActiveTabState('pos');
+    }
+  }, [activeUser, activeTab, isAuthenticated]);
 
 
   const [products, setProducts] = useState<Product[]>(DBStorage.getProducts());
@@ -211,7 +253,87 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setQuotations(DBStorage.getQuotations());
   };
 
+  // Secure Boot: decrypt AES-GCM local storage, migrate PBKDF2 PINs, and validate signed session
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      await DBStorage.initAsync();
+      if (!mounted) return;
+      refreshData();
+
+      const loadedUsers = DBStorage.getUsers();
+      const loadedStore = DBStorage.getStore();
+      const integrityValid = await verifyUsersDirectoryIntegrity(loadedUsers);
+      const sessionCheck = await verifySignedSession();
+
+      if (integrityValid && sessionCheck.valid && sessionCheck.session) {
+        const matched = loadedUsers.find(
+          (u) =>
+            u.id === sessionCheck.session?.userId &&
+            u.role === sessionCheck.session?.role &&
+            u.active
+        );
+        const demoBlocked = matched?.role === 'visitor' && loadedStore.demo_mode_enabled === false;
+        if (matched && !demoBlocked) {
+          setActiveUser(matched);
+          setIsAuthenticated(true);
+        } else {
+          await clearSignedSession();
+          setIsAuthenticated(false);
+        }
+      } else {
+        setIsAuthenticated(false);
+      }
+
+      if (mounted) {
+        setIsStorageReady(true);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Idle auto-lock & periodic session verification
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let lastTouch = Date.now();
+    const handleActivity = () => {
+      const now = Date.now();
+      if (now - lastTouch > 30000) {
+        lastTouch = now;
+        void touchSignedSession();
+      }
+    };
+
+    const validateSession = async () => {
+      const check = await verifySignedSession();
+      if (!check.valid) {
+        setIsAuthenticated(false);
+        setActiveUser(DEFAULT_BOOT_USER);
+      }
+    };
+
+    window.addEventListener('pointerdown', handleActivity, { passive: true });
+    window.addEventListener('keydown', handleActivity, { passive: true });
+    window.addEventListener('visibilitychange', validateSession);
+    const interval = setInterval(validateSession, 30000);
+
+    return () => {
+      window.removeEventListener('pointerdown', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('visibilitychange', validateSession);
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
+
   const updateStore = (settings: StoreSettings) => {
+    if (!hasPermission(activeUser, 'settings_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked settings update by ${activeUser.name}`);
+      return;
+    }
     setStore(settings);
     DBStorage.saveStore(settings);
     addAuditLog('UPDATE_STORE', 'Settings', 'Store settings and header/footer customized');
@@ -227,8 +349,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ) => {
     const log: AuditLog = {
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      user_id: activeUser.id,
-      user_name: activeUser.name,
+      user_id: activeUser?.id || 'system',
+      user_name: activeUser?.name || 'System',
       action,
       module,
       description,
@@ -302,17 +424,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       user_id: activeUser.id,
     };
 
-    // 1. Save Sale to Local Storage
     const updatedSales = [newSale, ...sales];
     setSales(updatedSales);
     DBStorage.saveSales(updatedSales);
 
-    // 2. Deduct Stock for each variant & log Stock Transactions
     const currentProducts = [...products];
     const newStockTxs: StockTransaction[] = [];
 
     saleData.items.forEach((item) => {
-      let variantFound = false;
       for (const prod of currentProducts) {
         const vIndex = prod.variants.findIndex((v) => v.id === item.variant_id);
         if (vIndex !== -1) {
@@ -342,8 +461,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             created_at: now.toISOString(),
             branch_id: store.branch_id,
           });
-
-          variantFound = true;
           break;
         }
       }
@@ -356,8 +473,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStockTransactions(updatedStockTxs);
     DBStorage.saveStockTransactions(updatedStockTxs);
 
-    // 3. Customer Ledger update (If customer identified or due created)
-    let updatedCustomers = [...customers];
+    const updatedCustomers = [...customers];
     let customerObj: Customer | undefined;
 
     if (saleData.customer_mobile) {
@@ -378,7 +494,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         };
         updatedCustomers[existingIdx] = customerObj;
       } else {
-        // Auto create customer
         customerObj = {
           id: `cust_${Date.now()}`,
           name: saleData.customer_name || 'Customer',
@@ -401,7 +516,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       DBStorage.saveCustomers(updatedCustomers);
     }
 
-    // 4. Record Customer Due Transaction if due_amount > 0
     if (saleData.due_amount > 0 && customerObj) {
       const dueTx: CustomerDueTransaction = {
         id: `cdt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -428,16 +542,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       DBStorage.saveCustomerDues(updatedCustomerDues);
     }
 
-    // 5. Audit Log
     addAuditLog(
       'POS_SALE_COMPLETED',
       'POS',
       `Completed Sale Invoice #${invoiceNo} for Total ৳${saleData.grand_total} (Paid: ৳${saleData.paid_amount}, Due: ৳${saleData.due_amount})`
     );
 
-    // 6. Set Printable Receipt state
     setPrintableReceipt({ type: 'sale', data: newSale });
-
     return newSale;
   };
 
@@ -582,7 +693,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setPurchases(updatedPurchases);
     DBStorage.savePurchases(updatedPurchases);
 
-    // Increase product variant stock
     const currentProds = [...products];
     const newStockTxs: StockTransaction[] = [];
 
@@ -597,7 +707,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           prod.variants[vIndex] = {
             ...variant,
             stock_quantity: newStock,
-            purchase_price: item.purchase_price, // Update purchase price to latest
+            purchase_price: item.purchase_price,
             updated_at: now.toISOString(),
           };
 
@@ -630,7 +740,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStockTransactions(updatedStockTxs);
     DBStorage.saveStockTransactions(updatedStockTxs);
 
-    // Supplier stats update
     const updatedSups = [...suppliers];
     const sIndex = updatedSups.findIndex((s) => s.id === purchaseData.supplier_id);
     if (sIndex !== -1) {
@@ -646,7 +755,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       DBStorage.saveSuppliers(updatedSups);
     }
 
-    // Record Supplier Due if due_amount > 0
     if (purchaseData.due_amount > 0) {
       const dueTx: SupplierDueTransaction = {
         id: `sdt_${Date.now()}`,
@@ -708,8 +816,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newExpense;
   };
 
-  // Adjust Stock Quantity Manually
+  // Adjust Stock Quantity Manually (RBAC protected)
   const adjustStock = (variant_id: string, new_stock: number, reason: string) => {
+    if (!hasPermission(activeUser, 'inventory_adjust')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked stock adjustment by ${activeUser.name}`);
+      return;
+    }
+
     const now = new Date();
     const currentProds = [...products];
     let foundProdName = '';
@@ -799,7 +912,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         reason: rItem.reason,
       });
 
-      // Increase stock back
       for (const prod of currentProds) {
         const vIndex = prod.variants.findIndex((v) => v.id === rItem.variant_id);
         if (vIndex !== -1) {
@@ -863,7 +975,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setReturns(updatedReturns);
     DBStorage.saveReturns(updatedReturns);
 
-    // Update sale status
     const updatedSales = sales.map((s) =>
       s.invoice_number === invoice_number ? { ...s, status: 'returned' as const } : s
     );
@@ -879,15 +990,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newReturn;
   };
 
-  // Void/Cancel Invoice
+  // Void/Cancel Invoice (RBAC protected: invoice_cancel)
   const voidSale = (sale_id: string, reason: string): boolean => {
+    if (!hasPermission(activeUser, 'invoice_cancel')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked void invoice attempt by ${activeUser.name}`);
+      return false;
+    }
+
     const saleIndex = sales.findIndex((s) => s.id === sale_id);
     if (saleIndex === -1) return false;
 
     const sale = sales[saleIndex];
     const now = new Date();
 
-    // Restock all items
     const currentProds = [...products];
     const newStockTxs: StockTransaction[] = [];
 
@@ -934,7 +1049,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStockTransactions(updatedStockTxs);
     DBStorage.saveStockTransactions(updatedStockTxs);
 
-    // Reverse Customer due if applicable
     if (sale.due_amount > 0 && sale.customer_id) {
       const updatedCusts = [...customers];
       const cIdx = updatedCusts.findIndex((c) => c.id === sale.customer_id);
@@ -975,8 +1089,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
-  // Save/Update Product with Variants
+  // Save/Update Product with Variants (RBAC protected)
   const saveProduct = (product: Product) => {
+    if (!hasPermission(activeUser, 'product_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked product save by ${activeUser.name}`);
+      return;
+    }
     const existingIdx = products.findIndex((p) => p.id === product.id);
     let updated: Product[];
     if (existingIdx !== -1) {
@@ -990,22 +1108,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addAuditLog('PRODUCT_SAVED', 'Products', `Saved Product '${product.name}' with ${product.variants.length} variant(s)`);
   };
 
-  // Archive Product (Soft Delete)
+  // Archive Product (RBAC protected)
   const archiveProduct = (product_id: string) => {
+    if (!hasPermission(activeUser, 'product_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked product archive by ${activeUser.name}`);
+      return;
+    }
     const updated = products.map((p) => (p.id === product_id ? { ...p, archived: true } : p));
     setProducts(updated);
     DBStorage.saveProducts(updated);
     addAuditLog('PRODUCT_ARCHIVED', 'Products', `Archived product ID ${product_id}`);
   };
 
-  // Save Customer
+  // Save Customer (preserves existing ledger balances if matched by ID or mobile)
   const saveCustomer = (customer: Customer): Customer => {
-    const idx = customers.findIndex((c) => c.id === customer.id || c.mobile === customer.mobile);
+    const idx = customers.findIndex(
+      (c) => c.id === customer.id || (customer.mobile && c.mobile.trim() === customer.mobile.trim())
+    );
     let updated: Customer[];
-    let savedCust = customer;
+    let savedCust: Customer;
     if (idx !== -1) {
+      const existing = customers[idx];
       updated = [...customers];
-      savedCust = { ...updated[idx], ...customer, updated_at: new Date().toISOString() };
+      savedCust = {
+        ...existing,
+        name: customer.name || existing.name,
+        mobile: customer.mobile || existing.mobile,
+        email: customer.email !== undefined ? customer.email : existing.email,
+        address: customer.address !== undefined ? customer.address : existing.address,
+        customer_type: customer.customer_type || existing.customer_type,
+        due_promise_date:
+          customer.due_promise_date !== undefined
+            ? customer.due_promise_date
+            : existing.due_promise_date,
+        updated_at: new Date().toISOString(),
+      };
       updated[idx] = savedCust;
     } else {
       savedCust = { ...customer, id: customer.id || `cust_${Date.now()}` };
@@ -1015,6 +1152,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     DBStorage.saveCustomers(updated);
     addAuditLog('CUSTOMER_SAVED', 'Customers', `Saved Customer ${savedCust.name} (${savedCust.mobile})`);
     return savedCust;
+  };
+
+  // Record Multi-Channel Customer Due Alert (SMS, WhatsApp, Call, Email, Share, Manual)
+  const logDueAlert = (customerId: string, channel: DueAlertChannel, notes?: string) => {
+    const idx = customers.findIndex((c) => c.id === customerId);
+    if (idx === -1) return;
+    const nowIso = new Date().toISOString();
+    const target = customers[idx];
+    const updated = [...customers];
+    updated[idx] = {
+      ...target,
+      last_alert_sent_at: nowIso,
+      last_alert_channel: channel,
+      alert_count: (target.alert_count || 0) + 1,
+      updated_at: nowIso,
+    };
+    setCustomers(updated);
+    DBStorage.saveCustomers(updated);
+    addAuditLog(
+      'DUE_ALERT_SENT',
+      'Customer Due',
+      `Sent ${channel.toUpperCase()} due reminder to ${target.name} (${target.mobile}) for Due ৳${target.total_due_amount}${notes ? ` • ${notes}` : ''}`
+    );
   };
 
   // Save Supplier
@@ -1038,6 +1198,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Save Category
   const saveCategory = (category: Category) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
     const idx = categories.findIndex((c) => c.id === category.id);
     let updated: Category[];
     if (idx !== -1) {
@@ -1050,134 +1211,259 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     DBStorage.saveCategories(updated);
   };
 
-  // Save User
-  const saveUser = (user: User) => {
-    const idx = users.findIndex((u) => u.id === user.id);
+  // Save User (RBAC protected + PBKDF2 hash enforcement)
+  const saveUser = async (user: User, plainPinToSet?: string): Promise<void> => {
+    if (!hasPermission(activeUser, 'user_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked user modification attempt by ${activeUser.name}`);
+      return;
+    }
+
+    const existing = users.find((u) => u.id === user.id);
+    let hashedPin = existing?.pin || user.pin;
+
+    if (plainPinToSet && plainPinToSet.trim().length >= 4) {
+      hashedPin = await hashPin(plainPinToSet.trim());
+    } else if (!isHashedPin(hashedPin)) {
+      hashedPin = await hashPin(hashedPin || '1234');
+    }
+
+    const userToSave: User = {
+      ...user,
+      pin: hashedPin,
+      must_change_pin:
+        plainPinToSet && plainPinToSet.trim() !== '1234'
+          ? false
+          : plainPinToSet?.trim() === '1234' && user.role === 'admin'
+          ? true
+          : user.must_change_pin,
+      permissions: user.permissions?.length ? user.permissions : getPermissionsForRole(user.role),
+    };
+
+    const idx = users.findIndex((u) => u.id === userToSave.id);
     let updated: User[];
     if (idx !== -1) {
       updated = [...users];
-      updated[idx] = user;
+      updated[idx] = userToSave;
     } else {
-      updated = [...users, user];
+      updated = [...users, userToSave];
     }
+
     setUsers(updated);
     DBStorage.saveUsers(updated);
-    addAuditLog('USER_SAVED', 'Users', `Saved User ${user.name} (${user.role})`);
+
+    if (activeUser.id === userToSave.id) {
+      setActiveUser(userToSave);
+      await createSignedSession(userToSave.id, userToSave.role);
+    }
+
+    addAuditLog('USER_SAVED', 'Users', `Saved User ${userToSave.name} (@${userToSave.username}, ${userToSave.role})`);
   };
 
-  // Cashier, Visitor & Terminal Authentication
-  const loginWithPin = (userIdOrUsername: string, pin: string): { success: boolean; message?: string } => {
+  // Delete User / Salesman (RBAC protected)
+  const deleteUser = (userId: string) => {
+    if (!hasPermission(activeUser, 'user_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked user deletion attempt by ${activeUser.name}`);
+      return;
+    }
+    const target = users.find((u) => u.id === userId);
+    if (!target || target.id === 'user_admin' || target.id === activeUser.id) return;
+    const updated = users.filter((u) => u.id !== userId);
+    setUsers(updated);
+    DBStorage.saveUsers(updated);
+    addAuditLog('USER_DELETED', 'Users', `Removed staff/salesman ${target.name} (@${target.username})`);
+  };
+
+  // Authenticated User Self-Service PIN Update
+  const changeOwnPin = async (
+    currentPin: string,
+    newPin: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    if (!isAuthenticated || !activeUser?.id) {
+      return { success: false, message: 'Session is not active.' };
+    }
+    const cleanNew = newPin.trim();
+    if (cleanNew.length < 4) {
+      return { success: false, message: 'নতুন পাসওয়ার্ড বা পিন কমপক্ষে ৪ অক্ষরের হতে হবে (Minimum 4 characters).' };
+    }
+    if (activeUser.role === 'admin' && cleanNew === '1234') {
+      return { success: false, message: 'নিরাপত্তার জন্য অ্যাডমিন পিন হিসেবে 1234 ব্যবহার করা যাবে না।' };
+    }
+
+    const currentValid = await verifyPin(currentPin, activeUser.pin);
+    if (!currentValid) {
+      return { success: false, message: 'বর্তমান পাসওয়ার্ড বা পিন সঠিক নয় (Current PIN is incorrect).' };
+    }
+
+    const nextHash = await hashPin(cleanNew);
+    const updatedUser: User = {
+      ...activeUser,
+      pin: nextHash,
+      must_change_pin: false,
+      updated_at: new Date().toISOString(),
+    };
+    const updatedUsers = users.map((u) => (u.id === updatedUser.id ? updatedUser : u));
+    setUsers(updatedUsers);
+    DBStorage.saveUsers(updatedUsers);
+    setActiveUser(updatedUser);
+    addAuditLog('PIN_CHANGED', 'Security', `${updatedUser.name} updated their Password/PIN.`);
+    return { success: true };
+  };
+
+  // Cashier, Salesman, Visitor & Terminal Authentication (PBKDF2 + Brute-Force Rate Limit + Signed Session)
+  const loginWithPin = async (
+    userIdOrUsername: string,
+    pin: string
+  ): Promise<{ success: boolean; message?: string; lockedSeconds?: number }> => {
     const trimmed = userIdOrUsername.trim().toLowerCase();
-    let foundUser = users.find(
+    if (!trimmed || !pin) {
+      return { success: false, message: 'আইডি এবং পাসওয়ার্ড/পিন দিন (ID and Password/PIN required).' };
+    }
+
+    // 1. Check Brute-Force Rate Limiter
+    const throttle = await checkLoginThrottle(trimmed);
+    if (!throttle.allowed) {
+      return {
+        success: false,
+        lockedSeconds: throttle.remainingSeconds,
+        message: `অতিরিক্ত ভুল চেষ্টার কারণে লগইন সাময়িকভাবে বন্ধ (${throttle.remainingSeconds} সেকেন্ড অপেক্ষা করুন)।`,
+      };
+    }
+
+    // 2. Verify Users Directory Integrity MAC
+    const directoryIntact = await verifyUsersDirectoryIntegrity(users);
+    if (!directoryIntact) {
+      addAuditLog('SECURITY_TAMPER_DETECTED', 'Security', 'User role/permission directory MAC mismatch detected.');
+      return {
+        success: false,
+        message: 'সিস্টেম ইউজার ডিরেক্টরি পরিবর্তন শনাক্ত হয়েছে (Directory integrity check failed).',
+      };
+    }
+
+    // 3. Lookup active user strictly in stored directory (NO hardcoded fallback user creation!)
+    const normalizedPhone = trimmed.replace(/[\s\-+]/g, '');
+    const foundUser = users.find(
       (u) =>
         u.id.toLowerCase() === trimmed ||
         u.username.toLowerCase() === trimmed ||
-        u.name.toLowerCase() === trimmed
+        u.name.toLowerCase() === trimmed ||
+        (u.phone && normalizedPhone.length >= 6 && u.phone.replace(/[\s\-+]/g, '') === normalizedPhone)
     );
 
-    // If searching for demo or visitor, fallback to demo/visitor account
-    if (!foundUser && (trimmed === 'demo' || trimmed === 'visitor' || trimmed === 'user_demo')) {
-      foundUser = users.find((u) => u.username === 'demo' || u.role === 'visitor') || {
-        id: 'user_demo',
-        name: 'Demo Visitor (ভিজিটর)',
-        username: 'demo',
-        pin: '1234',
-        role: 'visitor',
-        phone: '+880 1700-000000',
-        email: 'visitor@superstore.bd',
-        active: true,
-        permissions: ['pos_sale', 'product_manage', 'customer_manage', 'due_manage'],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        sync_status: 'synced',
-        branch_id: store.branch_id || 'branch_dhaka_main',
-        device_id: 'pos_terminal_01',
-      };
-    }
-
-    // If searching for admin or ID 'admin', fallback to admin user
-    if (!foundUser && (trimmed === 'admin' || trimmed === 'user_admin')) {
-      foundUser = users.find((u) => u.role === 'admin') || {
-        id: 'user_admin',
-        name: 'Md. Rafiqul Islam (Owner)',
-        username: 'admin',
-        pin: '1234',
-        role: 'admin',
-        phone: '+880 1711-223344',
-        email: 'owner@superstore.bd',
-        active: true,
-        permissions: [
-          'pos_sale',
-          'price_change',
-          'discount_override',
-          'invoice_cancel',
-          'product_manage',
-          'inventory_adjust',
-          'supplier_manage',
-          'customer_manage',
-          'due_manage',
-          'expense_manage',
-          'reports_view',
-          'user_manage',
-          'settings_manage',
-          'backup_manage',
-        ],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        sync_status: 'synced',
-        branch_id: store.branch_id || 'branch_dhaka_main',
-        device_id: 'pos_terminal_01',
-      };
-    }
-
     if (!foundUser) {
-      return { success: false, message: 'ব্যবহারকারী পাওয়া যায়নি (User not found).' };
+      const failRes = await recordFailedLoginAttempt(trimmed);
+      return {
+        success: false,
+        lockedSeconds: failRes.lockedSeconds || undefined,
+        message: failRes.lockedSeconds
+          ? `অতিরিক্ত ভুল চেষ্টা! ${failRes.lockedSeconds} সেকেন্ড পর আবার চেষ্টা করুন।`
+          : 'ভুল ইউজার আইডি বা পাসওয়ার্ড! (Invalid User ID or Password/PIN)',
+      };
+    }
+
+    if (foundUser.role === 'visitor' && store.demo_mode_enabled === false) {
+      return {
+        success: false,
+        message: 'ডেমো ভিজিটর অ্যাকাউন্টটি অ্যাডমিন দ্বারা বন্ধ করা হয়েছে (Demo account is disabled).',
+      };
     }
 
     if (!foundUser.active) {
-      return { success: false, message: 'এই অ্যাকাউন্টটি নিষ্ক্রিয় রাখা হয়েছে (Account is deactivated).' };
+      return {
+        success: false,
+        message: 'এই অ্যাকাউন্টটি নিষ্ক্রিয় রাখা হয়েছে (Account is deactivated).',
+      };
     }
 
-    const isMasterAdminPin = (trimmed === 'admin' || foundUser.role === 'admin' || foundUser.username === 'admin') && pin === '1234';
-    const isDemoVisitorPin = (trimmed === 'demo' || trimmed === 'visitor' || foundUser.role === 'visitor' || foundUser.username === 'demo') && pin === '1234';
-
-    if (foundUser.pin !== pin && !isMasterAdminPin && !isDemoVisitorPin) {
-      return { success: false, message: 'ভুল পিন কোড! ডেমো পিন হলো 1234 (Invalid PIN).' };
+    // 4. Verify Password/PIN strictly via PBKDF2-SHA256 (NO master/demo plaintext PIN backdoor!)
+    const isPinValid = await verifyPin(pin, foundUser.pin);
+    if (!isPinValid) {
+      const failRes = await recordFailedLoginAttempt(trimmed);
+      addAuditLog(
+        'LOGIN_FAILED',
+        'Auth',
+        `Failed login attempt #${failRes.attempts} for @${foundUser.username}`
+      );
+      return {
+        success: false,
+        lockedSeconds: failRes.lockedSeconds || undefined,
+        message: failRes.lockedSeconds
+          ? `অতিরিক্ত ভুল পাসওয়ার্ড! নিরাপত্তার জন্য ${failRes.lockedSeconds} সেকেন্ড লক করা হয়েছে।`
+          : 'ভুল পাসওয়ার্ড বা পিন কোড! আবার চেষ্টা করুন (Invalid Password/PIN).',
+      };
     }
+
+    // 5. Issue HMAC-Signed Session Token with Expiration & Idle Timeout
+    await clearLoginAttempts(trimmed);
+    await createSignedSession(foundUser.id, foundUser.role);
 
     setActiveUser(foundUser);
     setIsAuthenticated(true);
-    DBStorage.setSessionUserId(foundUser.id);
-    addAuditLog('USER_LOGIN', 'Auth', `User ${foundUser.name} (${foundUser.role}) logged in successfully.`);
+    if (!canAccessTab(foundUser, activeTab)) {
+      setActiveTabState('pos');
+    }
+    addAuditLog('USER_LOGIN', 'Auth', `User ${foundUser.name} (${foundUser.role}) authenticated securely.`);
     return { success: true };
   };
 
   const logout = () => {
+    const actorName = activeUser?.name || 'User';
     setIsAuthenticated(false);
-    DBStorage.setSessionUserId(null);
-    addAuditLog('USER_LOGOUT', 'Auth', `User ${activeUser.name} logged out from terminal.`);
+    setActiveUser(DEFAULT_BOOT_USER);
+    setCachedToken(null);
+    void clearSignedSession();
+    addAuditLog('USER_LOGOUT', 'Auth', `User ${actorName} signed out and cleared active session.`);
   };
 
   const lockTerminal = () => {
+    const actorName = activeUser?.name || 'User';
     setIsAuthenticated(false);
-    addAuditLog('TERMINAL_LOCKED', 'Auth', `Terminal locked by ${activeUser.name}.`);
+    void clearSignedSession();
+    addAuditLog('TERMINAL_LOCKED', 'Auth', `Terminal locked by ${actorName}.`);
   };
 
-  // History & Data Reset Actions
+  // History & Data Reset Actions (Admin Only RBAC enforced)
   const clearTransactionHistory = () => {
+    if (activeUser.role !== 'admin' || !hasPermission(activeUser, 'backup_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked clearTransactionHistory by ${activeUser.name}`);
+      return;
+    }
     DBStorage.clearTransactionHistory(activeUser.id, activeUser.name);
     refreshData();
   };
 
   const wipeAllData = () => {
+    if (activeUser.role !== 'admin' || !hasPermission(activeUser, 'backup_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked wipeAllData by ${activeUser.name}`);
+      return;
+    }
     DBStorage.wipeAllData(activeUser.id, activeUser.name);
     refreshData();
   };
 
-  const resetToDemoData = () => {
-    DBStorage.resetToSeedData();
+  const resetToDemoData = async () => {
+    if (activeUser.role !== 'admin' || !hasPermission(activeUser, 'backup_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked resetToDemoData by ${activeUser.name}`);
+      return;
+    }
+    await DBStorage.resetToSeedData();
     refreshData();
   };
+
+  const checkPermission = (perm: PermissionKey) => hasPermission(activeUser, perm);
+  const requiresPinChange = Boolean(
+    isAuthenticated && activeUser?.role === 'admin' && activeUser?.must_change_pin
+  );
+
+  if (!isStorageReady) {
+    return (
+      <div className="min-h-screen bg-[#f4f6fb] flex items-center justify-center p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl px-6 py-5 shadow-sm flex items-center gap-3 text-slate-700 text-xs font-semibold">
+          <div className="w-4 h-4 rounded-full border-2 border-[#6666f1] border-t-transparent animate-spin" />
+          <span>Unlocking encrypted store vault...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AppContext.Provider
@@ -1219,13 +1505,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         saveProduct,
         archiveProduct,
         saveCustomer,
+        logDueAlert,
         saveSupplier,
         saveUser,
+        deleteUser,
         saveCategory,
         addAuditLog,
         refreshData,
         isAuthenticated,
+        isStorageReady,
+        requiresPinChange,
         loginWithPin,
+        changeOwnPin,
+        checkPermission,
         logout,
         lockTerminal,
         clearTransactionHistory,

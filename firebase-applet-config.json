@@ -3,6 +3,7 @@
   "appId": "1:599257960515:web:9e449e4c26ce36c82304f6",
   "apiKey": "AIzaSyCNTv8lbSnZvAP9jiueXyumQtMTihdpTTA",
   "authDomain": "inspired-lamp-7zbz0.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-offlinegrocerysh-1ef996af-68ab-4c8d-86f4-575f4356d1c2",
   "storageBucket": "inspired-lamp-7zbz0.firebasestorage.app",
   "messagingSenderId": "599257960515",
   "measurementId": "",

@@ -519,8 +519,8 @@ export const ReturnsManagement: React.FC = () => {
 
       {/* Return Voucher Modal */}
       {selectedReturnForView && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:fixed print:inset-0">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800 printable-area print:shadow-none print:border-none print:m-0">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900">Return Voucher</h3>
@@ -528,7 +528,7 @@ export const ReturnsManagement: React.FC = () => {
               </div>
               <button
                 onClick={() => setSelectedReturnForView(null)}
-                className="text-slate-400 hover:text-slate-700"
+                className="text-slate-400 hover:text-slate-700 no-print"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -590,7 +590,7 @@ export const ReturnsManagement: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 no-print">
               <button
                 onClick={() => window.print()}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"

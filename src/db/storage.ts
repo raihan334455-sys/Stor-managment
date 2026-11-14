@@ -37,6 +37,18 @@ import {
   INITIAL_STOCK_TRANSACTIONS,
 } from './initialData';
 
+import {
+  decryptStringAesGcm,
+  encryptStringAesGcm,
+  getOrCreateAesKey,
+  getOrCreateHmacKey,
+  getPermissionsForRole,
+  hashPin,
+  isEncryptedBlob,
+  isHashedPin,
+  signUsersDirectory,
+} from '../utils/security';
+
 const KEYS = {
   STORE: 'pos_store_settings',
   USERS: 'pos_users',
@@ -58,90 +70,260 @@ const KEYS = {
   BACKUP_HISTORY: 'pos_backup_snapshots',
 };
 
-function getItem<T>(key: string, defaultValue: T): T {
+const memoryCache = new Map<string, unknown>();
+const writeQueues = new Map<string, Promise<void>>();
+let storageInitialized = false;
+
+async function persistEncryptedKey(key: string, value: unknown): Promise<void> {
+  const prev = writeQueues.get(key) || Promise.resolve();
+  const next = prev
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const serialized = JSON.stringify(value);
+        const encrypted = await encryptStringAesGcm(serialized);
+        localStorage.setItem(key, encrypted);
+      } catch (err) {
+        console.error(`Failed to encrypt/save ${key}:`, err);
+      }
+    });
+  writeQueues.set(key, next);
+  return next;
+}
+
+async function hydrateKey<T>(key: string, defaultValue: T): Promise<T> {
   try {
-    const data = localStorage.getItem(key);
-    if (!data) {
-      localStorage.setItem(key, JSON.stringify(defaultValue));
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      memoryCache.set(key, defaultValue);
+      await persistEncryptedKey(key, defaultValue);
       return defaultValue;
     }
-    return JSON.parse(data) as T;
+
+    if (isEncryptedBlob(raw)) {
+      const decrypted = await decryptStringAesGcm(raw);
+      if (decrypted) {
+        const parsed = JSON.parse(decrypted) as T;
+        memoryCache.set(key, parsed);
+        return parsed;
+      }
+      console.warn(`Could not decrypt ${key}; resetting to safe default.`);
+      memoryCache.set(key, defaultValue);
+      await persistEncryptedKey(key, defaultValue);
+      return defaultValue;
+    }
+
+    // Migrate legacy plaintext JSON to AES-256-GCM ciphertext
+    const parsed = JSON.parse(raw) as T;
+    memoryCache.set(key, parsed);
+    await persistEncryptedKey(key, parsed);
+    return parsed;
   } catch (err) {
-    console.error(`Error reading ${key} from storage:`, err);
+    console.error(`Error hydrating ${key}:`, err);
+    memoryCache.set(key, defaultValue);
     return defaultValue;
   }
 }
 
-function setItem<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.error(`Error saving ${key} to storage:`, err);
+function getItem<T>(key: string, defaultValue: T): T {
+  if (memoryCache.has(key)) {
+    return memoryCache.get(key) as T;
   }
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      memoryCache.set(key, defaultValue);
+      void persistEncryptedKey(key, defaultValue);
+      return defaultValue;
+    }
+    if (!isEncryptedBlob(raw)) {
+      const parsed = JSON.parse(raw) as T;
+      memoryCache.set(key, parsed);
+      return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return defaultValue;
+}
+
+function setItem<T>(key: string, value: T): void {
+  memoryCache.set(key, value);
+  void persistEncryptedKey(key, value);
+}
+
+async function normalizeAndHashUsers(rawUsers: User[]): Promise<{ users: User[]; changed: boolean }> {
+  let changed = false;
+  const migrated: User[] = [];
+
+  for (const u of rawUsers) {
+    let next = { ...u };
+
+    if (next.id === 'user_demo' || next.username === 'demo') {
+      next = {
+        ...next,
+        role: 'visitor',
+        permissions: getPermissionsForRole('visitor'),
+      };
+    } else if (next.id === 'user_admin' || next.username === 'admin' || (next.name && next.name.includes('Rafiqul'))) {
+      next = {
+        ...next,
+        name: 'Md. Raihan (Owner)',
+        role: 'admin',
+        permissions: getPermissionsForRole('admin'),
+      };
+    }
+
+    if (!Array.isArray(next.permissions) || next.permissions.length === 0) {
+      next.permissions = getPermissionsForRole(next.role);
+      changed = true;
+    }
+
+    if (!isHashedPin(next.pin)) {
+      const rawPin = String(next.pin || '1234');
+      if (next.id === 'user_admin' && rawPin === '1234') {
+        next.must_change_pin = true;
+      }
+      next.pin = await hashPin(rawPin);
+      changed = true;
+    }
+
+    migrated.push(next);
+  }
+
+  return { users: migrated, changed };
 }
 
 export class DBStorage {
-  // Initialize storage with seeds if empty
+  static isInitialized(): boolean {
+    return storageInitialized;
+  }
+
+  // Asynchronous secure boot: initializes Web Crypto keys, decrypts vault, and hashes any plaintext PINs
+  static async initAsync(): Promise<void> {
+    // Remove legacy insecure localStorage session ID if present
+    try {
+      localStorage.removeItem('pos_active_session_user_id');
+    } catch {
+      // ignore
+    }
+
+    await getOrCreateAesKey();
+    await getOrCreateHmacKey();
+
+    await Promise.all([
+      hydrateKey(KEYS.STORE, INITIAL_STORE),
+      hydrateKey(KEYS.USERS, INITIAL_USERS),
+      hydrateKey(KEYS.CATEGORIES, INITIAL_CATEGORIES),
+      hydrateKey(KEYS.PRODUCTS, INITIAL_PRODUCTS),
+      hydrateKey(KEYS.CUSTOMERS, INITIAL_CUSTOMERS),
+      hydrateKey(KEYS.CUSTOMER_DUES, INITIAL_CUSTOMER_DUES),
+      hydrateKey(KEYS.SUPPLIERS, INITIAL_SUPPLIERS),
+      hydrateKey(KEYS.SUPPLIER_DUES, INITIAL_SUPPLIER_DUES),
+      hydrateKey(KEYS.PURCHASES, INITIAL_PURCHASES),
+      hydrateKey(KEYS.SALES, INITIAL_SALES),
+      hydrateKey(KEYS.EXPENSES, INITIAL_EXPENSES),
+      hydrateKey(KEYS.RECURRING_EXPENSES, INITIAL_RECURRING_EXPENSES),
+      hydrateKey(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]),
+      hydrateKey(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS),
+      hydrateKey(KEYS.STOCK_TRANSACTIONS, INITIAL_STOCK_TRANSACTIONS),
+      hydrateKey(KEYS.RETURNS, [] as SaleReturn[]),
+      hydrateKey(KEYS.QUOTATIONS, [] as Quotation[]),
+    ]);
+
+    // Ensure all stored users have PBKDF2-SHA256 PIN hashes & valid directory MAC
+    const currentUsers = getItem<User[]>(KEYS.USERS, INITIAL_USERS);
+    const { users: normalizedUsers, changed } = await normalizeAndHashUsers(currentUsers);
+    memoryCache.set(KEYS.USERS, normalizedUsers);
+    if (changed) {
+      await persistEncryptedKey(KEYS.USERS, normalizedUsers);
+    }
+    await signUsersDirectory(normalizedUsers);
+
+    storageInitialized = true;
+  }
+
+  // Sync fallback init
   static init(): void {
-    if (!localStorage.getItem(KEYS.STORE)) {
-      setItem(KEYS.STORE, INITIAL_STORE);
-      setItem(KEYS.USERS, INITIAL_USERS);
-      setItem(KEYS.CATEGORIES, INITIAL_CATEGORIES);
-      setItem(KEYS.PRODUCTS, INITIAL_PRODUCTS);
-      setItem(KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
-      setItem(KEYS.CUSTOMER_DUES, INITIAL_CUSTOMER_DUES);
-      setItem(KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
-      setItem(KEYS.SUPPLIER_DUES, INITIAL_SUPPLIER_DUES);
-      setItem(KEYS.PURCHASES, INITIAL_PURCHASES);
-      setItem(KEYS.SALES, INITIAL_SALES);
-      setItem(KEYS.EXPENSES, INITIAL_EXPENSES);
-      setItem(KEYS.RECURRING_EXPENSES, INITIAL_RECURRING_EXPENSES);
-      setItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
-      setItem(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
-      setItem(KEYS.STOCK_TRANSACTIONS, INITIAL_STOCK_TRANSACTIONS);
-      setItem(KEYS.RETURNS, []);
-      setItem(KEYS.QUOTATIONS, []);
+    if (!storageInitialized) {
+      void this.initAsync();
     }
   }
 
   // Store Settings
   static getStore(): StoreSettings {
-    return getItem(KEYS.STORE, INITIAL_STORE);
+    const s = getItem(KEYS.STORE, INITIAL_STORE);
+    let updated = false;
+    const next = { ...s };
+    if (next.seller_name && next.seller_name.includes('Rafiqul')) {
+      next.seller_name = 'Md. Raihan (Owner)';
+      updated = true;
+    }
+    if (next.demo_mode_enabled === undefined) {
+      next.demo_mode_enabled = true;
+      updated = true;
+    }
+    if (updated) {
+      this.saveStore(next);
+    }
+    return next;
   }
+
   static saveStore(store: StoreSettings): void {
     setItem(KEYS.STORE, store);
   }
 
   // Users
   static getUsers(): User[] {
-    const list = getItem(KEYS.USERS, INITIAL_USERS);
-    return list.map((u) => {
-      if (u.id === 'user_demo' || u.username === 'demo') {
-        return {
-          ...u,
-          role: 'visitor',
-          permissions: ['pos_sale', 'product_manage', 'customer_manage', 'due_manage'],
-        };
-      }
-      return u;
-    });
+    return getItem(KEYS.USERS, INITIAL_USERS);
   }
+
   static saveUsers(users: User[]): void {
     setItem(KEYS.USERS, users);
+    void signUsersDirectory(users);
   }
 
   // Categories
   static getCategories(): Category[] {
-    return getItem(KEYS.CATEGORIES, INITIAL_CATEGORIES);
+    const list = getItem<Category[]>(KEYS.CATEGORIES, INITIAL_CATEGORIES);
+    if (!list.some((c) => c.id === 'cat_general' || c.name.toLowerCase().includes('general'))) {
+      const generalCat: Category = {
+        id: 'cat_general',
+        name: 'General Goods (সাধারণ)',
+        code: 'GEN',
+        active: true,
+      };
+      const updatedList = [generalCat, ...list];
+      setItem(KEYS.CATEGORIES, updatedList);
+      return updatedList;
+    }
+    return list;
   }
+
   static saveCategories(categories: Category[]): void {
     setItem(KEYS.CATEGORIES, categories);
   }
 
   // Products
   static getProducts(): Product[] {
-    return getItem(KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    const list = getItem<Product[]>(KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    let updated = false;
+    const result = list.map((p) => {
+      if (!p.image) {
+        const init = INITIAL_PRODUCTS.find((ip) => ip.id === p.id);
+        if (init?.image) {
+          updated = true;
+          return { ...p, image: init.image };
+        }
+      }
+      return p;
+    });
+    if (updated) {
+      setItem(KEYS.PRODUCTS, result);
+    }
+    return result;
   }
+
   static saveProducts(products: Product[]): void {
     setItem(KEYS.PRODUCTS, products);
   }
@@ -150,6 +332,7 @@ export class DBStorage {
   static getCustomers(): Customer[] {
     return getItem(KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
   }
+
   static saveCustomers(customers: Customer[]): void {
     setItem(KEYS.CUSTOMERS, customers);
   }
@@ -158,6 +341,7 @@ export class DBStorage {
   static getCustomerDues(): CustomerDueTransaction[] {
     return getItem(KEYS.CUSTOMER_DUES, INITIAL_CUSTOMER_DUES);
   }
+
   static saveCustomerDues(dues: CustomerDueTransaction[]): void {
     setItem(KEYS.CUSTOMER_DUES, dues);
   }
@@ -166,6 +350,7 @@ export class DBStorage {
   static getSuppliers(): Supplier[] {
     return getItem(KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
   }
+
   static saveSuppliers(suppliers: Supplier[]): void {
     setItem(KEYS.SUPPLIERS, suppliers);
   }
@@ -174,6 +359,7 @@ export class DBStorage {
   static getSupplierDues(): SupplierDueTransaction[] {
     return getItem(KEYS.SUPPLIER_DUES, INITIAL_SUPPLIER_DUES);
   }
+
   static saveSupplierDues(dues: SupplierDueTransaction[]): void {
     setItem(KEYS.SUPPLIER_DUES, dues);
   }
@@ -182,14 +368,22 @@ export class DBStorage {
   static getPurchases(): Purchase[] {
     return getItem(KEYS.PURCHASES, INITIAL_PURCHASES);
   }
+
   static savePurchases(purchases: Purchase[]): void {
     setItem(KEYS.PURCHASES, purchases);
   }
 
   // Sales
   static getSales(): Sale[] {
-    return getItem(KEYS.SALES, INITIAL_SALES);
+    const sList = getItem(KEYS.SALES, INITIAL_SALES);
+    return sList.map((s) => {
+      if (s.seller_name && s.seller_name.includes('Rafiqul')) {
+        return { ...s, seller_name: 'Md. Raihan (Owner)' };
+      }
+      return s;
+    });
   }
+
   static saveSales(sales: Sale[]): void {
     setItem(KEYS.SALES, sales);
   }
@@ -198,6 +392,7 @@ export class DBStorage {
   static getStockTransactions(): StockTransaction[] {
     return getItem(KEYS.STOCK_TRANSACTIONS, INITIAL_STOCK_TRANSACTIONS);
   }
+
   static saveStockTransactions(txs: StockTransaction[]): void {
     setItem(KEYS.STOCK_TRANSACTIONS, txs);
   }
@@ -206,6 +401,7 @@ export class DBStorage {
   static getReturns(): SaleReturn[] {
     return getItem(KEYS.RETURNS, []);
   }
+
   static saveReturns(returns: SaleReturn[]): void {
     setItem(KEYS.RETURNS, returns);
   }
@@ -214,6 +410,7 @@ export class DBStorage {
   static getExpenses(): Expense[] {
     return getItem(KEYS.EXPENSES, INITIAL_EXPENSES);
   }
+
   static saveExpenses(expenses: Expense[]): void {
     setItem(KEYS.EXPENSES, expenses);
   }
@@ -222,14 +419,27 @@ export class DBStorage {
   static getRecurringExpenses(): RecurringExpense[] {
     return getItem(KEYS.RECURRING_EXPENSES, INITIAL_RECURRING_EXPENSES);
   }
+
   static saveRecurringExpenses(exp: RecurringExpense[]): void {
     setItem(KEYS.RECURRING_EXPENSES, exp);
   }
 
   // Cash Sessions
   static getCashSessions(): CashSession[] {
-    return getItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
+    const sessions = getItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
+    return sessions.map((cs) => {
+      const updated = { ...cs };
+      if (updated.cashier_name && updated.cashier_name.includes('Rafiqul')) {
+        updated.cashier_name = 'Md. Raihan (Owner)';
+      }
+      if (updated.id === 'cs_today' && updated.opening_cash === 5000) {
+        updated.opening_cash = 0;
+        updated.expected_closing_cash = 0;
+      }
+      return updated;
+    });
   }
+
   static saveCashSessions(sessions: CashSession[]): void {
     setItem(KEYS.CASH_SESSIONS, sessions);
   }
@@ -238,22 +448,30 @@ export class DBStorage {
   static getQuotations(): Quotation[] {
     return getItem(KEYS.QUOTATIONS, []);
   }
+
   static saveQuotations(q: Quotation[]): void {
     setItem(KEYS.QUOTATIONS, q);
   }
 
   // Audit Logs
   static getAuditLogs(): AuditLog[] {
-    return getItem(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
+    const logs = getItem(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
+    return logs.map((l) => {
+      if (l.user_name && l.user_name.includes('Rafiqul')) {
+        return { ...l, user_name: 'Md. Raihan (Owner)' };
+      }
+      return l;
+    });
   }
+
   static saveAuditLogs(logs: AuditLog[]): void {
     setItem(KEYS.AUDIT_LOGS, logs);
   }
 
-  // Export Complete Backup JSON Snapshot
+  // Export Complete Backup JSON Snapshot (PINs are PBKDF2-hashed; never plaintext)
   static exportFullBackup(): DatabaseBackup {
     return {
-      version: '1.0.0',
+      version: '1.1.0',
       timestamp: new Date().toISOString(),
       store: this.getStore(),
       users: this.getUsers(),
@@ -275,14 +493,18 @@ export class DBStorage {
     };
   }
 
-  // Restore Complete Backup JSON Snapshot
+  // Restore Complete Backup JSON Snapshot (automatically hashes any legacy plaintext PINs)
   static restoreFullBackup(backup: DatabaseBackup): boolean {
     try {
       if (!backup || !backup.store || !backup.products) {
         throw new Error('Invalid backup schema');
       }
       this.saveStore(backup.store);
-      if (backup.users) this.saveUsers(backup.users);
+      if (backup.users) {
+        void normalizeAndHashUsers(backup.users).then(({ users }) => {
+          this.saveUsers(users);
+        });
+      }
       if (backup.categories) this.saveCategories(backup.categories);
       if (backup.products) this.saveProducts(backup.products);
       if (backup.customers) this.saveCustomers(backup.customers);
@@ -305,13 +527,17 @@ export class DBStorage {
     }
   }
 
-  // Reset to Factory Demo Seeds
-  static resetToSeedData(): void {
-    localStorage.clear();
-    this.init();
+  // Reset to Factory Demo Seeds (preserves brute-force lockout counters)
+  static async resetToSeedData(): Promise<void> {
+    Object.values(KEYS).forEach((k) => {
+      localStorage.removeItem(k);
+      memoryCache.delete(k);
+    });
+    storageInitialized = false;
+    await this.initAsync();
   }
 
-  // Clear Transaction & Sales History (Keeps Products, Categories, Users, Store Settings)
+  // Clear Transaction & Sales History
   static clearTransactionHistory(userId: string = 'admin', userName: string = 'Admin'): void {
     setItem(KEYS.SALES, []);
     setItem(KEYS.CUSTOMER_DUES, []);
@@ -323,25 +549,22 @@ export class DBStorage {
     setItem(KEYS.QUOTATIONS, []);
     setItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
 
-    // Reset customer balances to 0
     const customers = this.getCustomers().map((c) => ({
       ...c,
       total_due_amount: 0,
-      total_spent: 0,
+      total_purchase_amount: 0,
       updated_at: new Date().toISOString(),
     }));
     this.saveCustomers(customers);
 
-    // Reset supplier balances to 0
     const suppliers = this.getSuppliers().map((s) => ({
       ...s,
       total_due: 0,
-      total_purchased: 0,
+      total_purchases: 0,
       updated_at: new Date().toISOString(),
     }));
     this.saveSuppliers(suppliers);
 
-    // Add Audit Log
     const logs = this.getAuditLogs();
     const newLog: AuditLog = {
       id: `audit_clear_${Date.now()}`,
@@ -358,7 +581,7 @@ export class DBStorage {
 
   // Wipe All Data (Fresh Empty Store Start)
   static wipeAllData(userId: string = 'admin', userName: string = 'Admin'): void {
-    const adminUser = this.getUsers().find((u) => u.role === 'admin') || INITIAL_USERS[0];
+    const adminUser = this.getUsers().find((u) => u.role === 'admin') || INITIAL_USERS[1];
     const store = this.getStore();
 
     setItem(KEYS.PRODUCTS, []);
@@ -375,7 +598,7 @@ export class DBStorage {
     setItem(KEYS.RECURRING_EXPENSES, []);
     setItem(KEYS.QUOTATIONS, []);
     setItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
-    setItem(KEYS.USERS, [adminUser]);
+    this.saveUsers([adminUser]);
 
     const newLog: AuditLog = {
       id: `audit_wipe_${Date.now()}`,
@@ -389,18 +612,4 @@ export class DBStorage {
     };
     setItem(KEYS.AUDIT_LOGS, [newLog]);
   }
-
-  // User Auth Session Helpers
-  static getSessionUserId(): string | null {
-    return localStorage.getItem('pos_active_session_user_id');
-  }
-
-  static setSessionUserId(userId: string | null): void {
-    if (userId) {
-      localStorage.setItem('pos_active_session_user_id', userId);
-    } else {
-      localStorage.removeItem('pos_active_session_user_id');
-    }
-  }
 }
-

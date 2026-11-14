@@ -60,7 +60,7 @@ export const GoogleDriveManagement: React.FC = () => {
   ]);
 
   // Modals & Feedback
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [isUploadingBackup, setIsUploadingBackup] = useState<boolean>(false);
   const [showNewFolderModal, setShowNewFolderModal] = useState<boolean>(false);
   const [newFolderName, setNewFolderName] = useState<string>('');
@@ -133,7 +133,7 @@ export const GoogleDriveManagement: React.FC = () => {
       if (quota) setStorageQuota(quota);
       setFiles(driveFiles);
     } catch (err: any) {
-      console.error('Error loading Drive data:', err);
+      console.warn('Notice loading Drive data:', err?.message || err);
       setStatusMessage({ type: 'error', text: err.message || 'Failed to load files from Google Drive' });
     } finally {
       setIsLoading(false);
@@ -150,12 +150,18 @@ export const GoogleDriveManagement: React.FC = () => {
         setUserProfile(result.user);
         setStatusMessage({ type: 'success', text: `Google Drive connected successfully as ${result.user.email}!` });
         await loadDriveData(result.accessToken);
+      } else {
+        // User closed or dismissed the popup without signing in
+        setStatusMessage({
+          type: 'info',
+          text: 'Google sign-in popup was closed before completing. Click "Sign in with Google" when you are ready to connect.',
+        });
       }
     } catch (err: any) {
-      console.error('Sign in failed:', err);
+      console.warn('Google sign-in attempt notice:', err?.message || err);
       setStatusMessage({
         type: 'error',
-        text: err.message || 'Google Drive authentication was cancelled or failed.',
+        text: err?.message || 'Google Drive authentication could not be completed.',
       });
     } finally {
       setIsSigningIn(false);
@@ -171,7 +177,7 @@ export const GoogleDriveManagement: React.FC = () => {
       setFiles([]);
       setStatusMessage({ type: 'success', text: 'Disconnected from Google Drive.' });
     } catch (err: any) {
-      console.error('Sign out error:', err);
+      console.warn('Sign out notice:', err?.message || err);
     }
   };
 
@@ -201,7 +207,7 @@ export const GoogleDriveManagement: React.FC = () => {
       // Reload files
       await loadDriveData(token, currentFolderId);
     } catch (err: any) {
-      console.error('Backup upload failed:', err);
+      console.warn('Backup upload note:', err?.message || err);
       setStatusMessage({ type: 'error', text: err.message || 'Failed to upload POS backup to Google Drive.' });
     } finally {
       setIsUploadingBackup(false);
@@ -269,7 +275,7 @@ export const GoogleDriveManagement: React.FC = () => {
         throw new Error('Failed to restore data into offline local database.');
       }
     } catch (err: any) {
-      console.error('Restore failed:', err);
+      console.warn('Restore note:', err?.message || err);
       setStatusMessage({ type: 'error', text: err.message || 'Failed to restore backup from Google Drive.' });
     } finally {
       setIsRestoring(false);
@@ -360,12 +366,16 @@ export const GoogleDriveManagement: React.FC = () => {
           className={`p-4 rounded-2xl border text-xs font-semibold flex items-center justify-between gap-3 shadow-sm ${
             statusMessage.type === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : statusMessage.type === 'info'
+              ? 'bg-blue-50 border-blue-200 text-blue-800'
               : 'bg-rose-50 border-rose-200 text-rose-800'
           }`}
         >
           <div className="flex items-center gap-2.5">
             {statusMessage.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : statusMessage.type === 'info' ? (
+              <Cloud className="w-5 h-5 text-blue-600 shrink-0" />
             ) : (
               <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
             )}
@@ -373,7 +383,7 @@ export const GoogleDriveManagement: React.FC = () => {
           </div>
           <button
             onClick={() => setStatusMessage(null)}
-            className="text-slate-400 hover:text-slate-600 text-sm font-bold"
+            className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
           >
             ✕
           </button>

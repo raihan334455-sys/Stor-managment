@@ -136,7 +136,7 @@ export const ReportsManagement: React.FC = () => {
   const projectedInventoryProfit = inventoryRetailValue - inventoryCostValue;
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 printable-area print:p-4 print:bg-white">
       {/* Header and Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -149,7 +149,7 @@ export const ReportsManagement: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 no-print">
           <div className="bg-white border border-slate-200 rounded-xl p-1 flex text-xs font-semibold shadow-sm">
             {(
               [

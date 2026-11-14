@@ -25,10 +25,10 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
   const printedAtStr = `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto no-print">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:fixed print:inset-0">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:w-full print:rounded-none">
         {/* Header Modal Bar */}
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between no-print">
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-emerald-400" />
             <h3 className="font-semibold text-base">Thermal Receipt Preview ({store.receipt_size})</h3>
@@ -42,11 +42,13 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
         </div>
 
         {/* Scrollable Receipt Preview Canvas */}
-        <div className="p-6 overflow-y-auto flex-1 bg-slate-100 flex justify-center">
+        <div className="p-6 overflow-y-auto flex-1 bg-slate-100 flex justify-center print:p-0 print:bg-white print:overflow-visible">
           <div
             ref={printRef}
             id="printable-receipt"
-            className={`bg-white p-4 shadow-md text-slate-900 font-mono text-xs leading-tight ${widthClass} border border-slate-200 printable-area`}
+            className={`bg-white p-4 shadow-md text-slate-900 font-mono text-xs leading-tight ${widthClass} border border-slate-200 printable-area ${
+              is58mm ? 'thermal-receipt-print-58' : 'thermal-receipt-print-80'
+            } print:shadow-none print:border-none print:m-0`}
           >
             {/* STORE HEADER */}
             <div className="text-center pb-2 border-b border-dashed border-slate-400">
@@ -299,7 +301,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
         </div>
 
         {/* Modal Action Footer */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between no-print">
           <div className="flex items-center gap-2 text-xs text-slate-600">
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             <span>Transaction Committed to Storage</span>

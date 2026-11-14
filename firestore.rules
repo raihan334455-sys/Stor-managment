@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrapOwner() {
+      return isVerifiedUser() && request.auth.token.email == 'raihan334455@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrapOwner() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Entity Validation Helpers
+    function isValidAdminMember(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'role', 'createdAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+        data.role == 'admin' &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidStoreBackupMeta(data) {
+      return data.keys().hasAll(['ownerId', 'storeName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'storeName', 'encryptedSnapshot', 'createdAt', 'updatedAt']) &&
+        isValidId(data.ownerId) &&
+        data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 160 &&
+        (!('encryptedSnapshot' in data) || (data.encryptedSnapshot is string && data.encryptedSnapshot.size() <= 500000)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Admin Directory: strictly owner/admin accessible
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isAdmin() || (isVerifiedUser() && request.auth.uid == adminId));
+      allow list: if isVerifiedUser() && resource.data.uid == request.auth.uid;
+      allow create: if isValidId(adminId) && isBootstrapOwner() &&
+        isValidAdminMember(incoming()) &&
+        incoming().uid == adminId &&
+        incoming().createdAt == request.time;
+      allow update, delete: if isValidId(adminId) && isBootstrapOwner();
+    }
+
+    // Owner-Scoped Store Metadata
+    match /stores/{storeId} {
+      allow get: if isValidId(storeId) && isVerifiedUser() && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(storeId) && isVerifiedUser() &&
+        isValidStoreBackupMeta(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(storeId) && isVerifiedUser() &&
+        isValidStoreBackupMeta(incoming()) &&
+        (existing().ownerId == request.auth.uid || isAdmin()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['storeName', 'encryptedSnapshot', 'updatedAt']);
+      allow delete: if isValidId(storeId) && isVerifiedUser() && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+  }
+}

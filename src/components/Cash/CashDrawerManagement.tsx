@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { DBStorage } from '../../db/storage';
 import {
   Wallet,
   DollarSign,
@@ -15,15 +16,29 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Calculator,
+  Edit3,
+  Banknote,
+  Sparkles,
 } from 'lucide-react';
 import { CashSession } from '../../types';
+
+const FLOAT_PRESETS = [
+  { label: '৳০ (No Money / খালি)', value: '0' },
+  { label: '৳৫০০', value: '500' },
+  { label: '৳১,০০০', value: '1000' },
+  { label: '৳২,০০০', value: '2000' },
+  { label: '৳৫,০০০', value: '5000' },
+  { label: '৳১০,০০০', value: '10000' },
+];
 
 export const CashDrawerManagement: React.FC = () => {
   const { cashSessions, sales, customerDues, expenses, store, activeUser, addAuditLog, refreshData } = useApp();
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
-  const [openingCashInput, setOpeningCashInput] = useState('5000');
+  const [showEditFloatModal, setShowEditFloatModal] = useState(false);
+  const [openingCashInput, setOpeningCashInput] = useState('0');
+  const [editFloatInput, setEditFloatInput] = useState('0');
   const [actualCashInput, setActualCashInput] = useState('');
   const [closingNotes, setClosingNotes] = useState('');
 
@@ -102,7 +117,7 @@ export const CashDrawerManagement: React.FC = () => {
     };
 
     const updated = [newSession, ...cashSessions];
-    localStorage.setItem('pos_cash_sessions', JSON.stringify(updated));
+    DBStorage.saveCashSessions(updated);
     addAuditLog(
       'SHIFT_OPENED',
       'Cash Drawer',
@@ -110,6 +125,29 @@ export const CashDrawerManagement: React.FC = () => {
     );
     refreshData();
     setShowOpenModal(false);
+  };
+
+  const handleUpdateActiveFloat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSession) return;
+    const newFloat = parseFloat(editFloatInput) || 0;
+    const oldFloat = activeSession.opening_cash;
+
+    const updatedSession: CashSession = {
+      ...activeSession,
+      opening_cash: newFloat,
+      expected_closing_cash: newFloat + currentCashSales + currentDueCollected - currentCashExpenses,
+    };
+
+    const updated = cashSessions.map((s) => (s.id === activeSession.id ? updatedSession : s));
+    DBStorage.saveCashSessions(updated);
+    addAuditLog(
+      'FLOAT_ADJUSTED',
+      'Cash Drawer',
+      `Active cash drawer float updated to ৳${newFloat} (was ৳${oldFloat}) by ${activeUser.name}`
+    );
+    refreshData();
+    setShowEditFloatModal(false);
   };
 
   const handleCloseShift = (e: React.FormEvent) => {
@@ -134,7 +172,7 @@ export const CashDrawerManagement: React.FC = () => {
     };
 
     const updated = cashSessions.map((s) => (s.id === activeSession.id ? closedSession : s));
-    localStorage.setItem('pos_cash_sessions', JSON.stringify(updated));
+    DBStorage.saveCashSessions(updated);
     addAuditLog(
       'SHIFT_CLOSED',
       'Cash Drawer',
@@ -216,12 +254,32 @@ export const CashDrawerManagement: React.FC = () => {
 
           {/* Breakdown cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 font-bold uppercase block">Opening Cash Float</span>
-              <div className="text-lg font-bold font-mono text-slate-800 mt-1">
-                {store.currency_symbol}
-                {activeSession.opening_cash.toLocaleString()}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block">Opening Cash Float</span>
+                  <button
+                    onClick={() => {
+                      setEditFloatInput(activeSession.opening_cash.toString());
+                      setShowEditFloatModal(true);
+                    }}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline transition-colors"
+                    title="Set or change drawer starting float / টাকা নির্ধারণ করুন"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Change Float</span>
+                  </button>
+                </div>
+                <div className="text-lg font-bold font-mono text-slate-800 mt-1 flex items-baseline gap-2">
+                  <span>{store.currency_symbol}{activeSession.opening_cash.toLocaleString()}</span>
+                  {activeSession.opening_cash === 0 && (
+                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
+                      No Money (খালি)
+                    </span>
+                  )}
+                </div>
               </div>
+              <p className="text-[10px] text-slate-400 mt-1">Starting money decided by you</p>
             </div>
 
             <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-100">
@@ -367,9 +425,17 @@ export const CashDrawerManagement: React.FC = () => {
       {/* Open Shift Modal */}
       {showOpenModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-800">Open Register Shift</h3>
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Banknote className="w-5 h-5 text-emerald-600" />
+                  <span>Open Register Shift (নতুন ড্রয়ার শুরু করুন)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  The active drawer starts with no money (৳0) by default. Choose how much money to put in your new drawer.
+                </p>
+              </div>
               <button onClick={() => setShowOpenModal(false)} className="text-slate-400 hover:text-slate-700">
                 <X className="w-5 h-5" />
               </button>
@@ -389,21 +455,60 @@ export const CashDrawerManagement: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Opening Cash Float ({store.currency_symbol}) *
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>How much money to put in new drawer? *</span>
+                  <span className="text-[10px] text-blue-600 font-medium">Click preset or type</span>
                 </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  placeholder="e.g. 5000"
-                  value={openingCashInput}
-                  onChange={(e) => setOpeningCashInput(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-base font-bold font-mono text-emerald-700 focus:outline-none focus:border-blue-500"
-                />
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  Amount in drawer at start of shift for customer change.
-                </span>
+
+                {/* Preset Chips */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-2.5">
+                  {FLOAT_PRESETS.map((p) => {
+                    const isSelected = openingCashInput === p.value;
+                    return (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setOpeningCashInput(p.value)}
+                        className={`px-2 py-2 rounded-xl text-xs font-semibold transition-all border text-center ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-200'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-base font-bold text-slate-400 font-mono">
+                    {store.currency_symbol}
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    placeholder="0"
+                    value={openingCashInput}
+                    onChange={(e) => setOpeningCashInput(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl pl-8 pr-3 py-2 text-lg font-bold font-mono text-emerald-700 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-600 mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  {parseFloat(openingCashInput) === 0 ? (
+                    <span className="text-amber-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Active drawer will open with No Money (৳০ খালি ড্রয়ার).</span>
+                    </span>
+                  ) : (
+                    <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Drawer will start with ৳{parseFloat(openingCashInput || '0').toLocaleString()} cash float.</span>
+                    </span>
+                  )}
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
@@ -416,9 +521,118 @@ export const CashDrawerManagement: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5"
                 >
-                  Start Shift
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>Start Shift ({parseFloat(openingCashInput) === 0 ? '৳0 No Money' : `৳${parseFloat(openingCashInput || '0').toLocaleString()}`})</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Active Drawer Float Modal */}
+      {showEditFloatModal && activeSession && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-blue-600" />
+                  <span>Set Active Drawer Money (টাকা নির্ধারণ / পরিবর্তন)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Decide how much money to put in your active drawer right now.
+                </p>
+              </div>
+              <button onClick={() => setShowEditFloatModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateActiveFloat} className="space-y-4">
+              <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Current Opening Float:</span>
+                  <span className="font-mono font-bold">
+                    {store.currency_symbol}{activeSession.opening_cash.toLocaleString()}
+                    {activeSession.opening_cash === 0 && ' (No Money / খালি)'}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>New Starting Float ({store.currency_symbol}) *</span>
+                  <span className="text-[10px] text-blue-600 font-medium">Select preset or type</span>
+                </label>
+
+                {/* Preset Chips */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-2.5">
+                  {FLOAT_PRESETS.map((p) => {
+                    const isSelected = editFloatInput === p.value;
+                    return (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setEditFloatInput(p.value)}
+                        className={`px-2 py-2 rounded-xl text-xs font-semibold transition-all border text-center ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-200'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-base font-bold text-slate-400 font-mono">
+                    {store.currency_symbol}
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    placeholder="0"
+                    value={editFloatInput}
+                    onChange={(e) => setEditFloatInput(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl pl-8 pr-3 py-2 text-lg font-bold font-mono text-blue-700 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <p className="text-[11px] text-slate-600 mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  {parseFloat(editFloatInput) === 0 ? (
+                    <span className="text-amber-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Active drawer will have No Money (৳০ খালি).</span>
+                    </span>
+                  ) : (
+                    <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Active drawer will have ৳{parseFloat(editFloatInput || '0').toLocaleString()} starting money.</span>
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditFloatModal(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm"
+                >
+                  Update Drawer Float
                 </button>
               </div>
             </form>

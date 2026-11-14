@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'cashier' | 'stock_manager' | 'visitor';
+export type UserRole = 'admin' | 'manager' | 'salesman' | 'cashier' | 'stock_manager' | 'visitor';
 
 export type PermissionKey =
   | 'pos_sale'
@@ -20,7 +20,8 @@ export interface User {
   id: string;
   name: string;
   username: string;
-  pin: string; // 4-6 digit PIN for quick login/override
+  pin: string; // PBKDF2-SHA256 hash stored at rest
+  must_change_pin?: boolean;
   role: UserRole;
   phone?: string;
   email?: string;
@@ -58,6 +59,10 @@ export interface StoreSettings {
   tax_percentage: number;
   low_stock_threshold: number;
   critical_stock_threshold: number;
+  demo_mode_enabled?: boolean;
+  due_alert_threshold?: number;
+  due_alert_days?: number;
+  due_payment_info?: string;
   language: 'en' | 'bn';
   branch_id: string;
   device_id: string;
@@ -163,10 +168,13 @@ export interface Supplier {
   branch_id: string;
 }
 
+export type DueAlertChannel = 'whatsapp' | 'sms' | 'call' | 'email' | 'share' | 'copy' | 'manual';
+
 export interface Customer {
   id: string;
   name: string;
   mobile: string;
+  email?: string;
   address?: string;
   customer_type: 'regular' | 'vip' | 'wholesale';
   total_orders: number;
@@ -175,6 +183,10 @@ export interface Customer {
   total_due_amount: number;
   loyalty_points: number;
   last_purchase_date?: string;
+  due_promise_date?: string;
+  last_alert_sent_at?: string;
+  last_alert_channel?: DueAlertChannel;
+  alert_count?: number;
   created_at: string;
   updated_at: string;
   sync_status: 'synced' | 'pending';

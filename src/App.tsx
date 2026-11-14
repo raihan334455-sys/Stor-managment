@@ -19,6 +19,8 @@ import { BackupManagement } from './components/Backup/BackupManagement';
 import { AuditLogsManagement } from './components/Audit/AuditLogsManagement';
 import { GoogleDriveManagement } from './components/GoogleDrive/GoogleDriveManagement';
 import { LoginScreen } from './components/Auth/LoginScreen';
+import { ModernDashboard } from './components/Dashboard/ModernDashboard';
+import { canAccessTab } from './utils/security';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -52,6 +54,7 @@ import {
   X,
   FileSpreadsheet,
   Trash2,
+  Camera,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -227,9 +230,10 @@ const DashboardView: React.FC = () => {
 /*                                SALES HISTORY VIEW                         */
 /* -------------------------------------------------------------------------- */
 const SalesHistoryView: React.FC = () => {
-  const { sales, store, setPrintableReceipt, voidSale } = useApp();
+  const { sales, store, setPrintableReceipt, voidSale, checkPermission } = useApp();
   const [search, setSearch] = useState('');
-  const [selectedSale, setSelectedSale] = useState<any>(null);
+  const [voidTarget, setVoidTarget] = useState<any>(null);
+  const canVoidSale = checkPermission('invoice_cancel');
 
   const filteredSales = sales.filter(
     (s) =>
@@ -309,19 +313,15 @@ const SalesHistoryView: React.FC = () => {
                 <td className="p-3.5 text-right flex items-center justify-end gap-2">
                   <button
                     onClick={() => setPrintableReceipt({ type: 'sale', data: s })}
-                    className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded text-[11px] font-semibold inline-flex items-center gap-1 shadow-sm"
+                    className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded text-[11px] font-semibold inline-flex items-center gap-1 shadow-sm cursor-pointer"
                   >
                     <Printer className="w-3 h-3 text-blue-600" />
                     <span>Receipt</span>
                   </button>
-                  {s.status === 'completed' && (
+                  {canVoidSale && s.status === 'completed' && (
                     <button
-                      onClick={() => {
-                        if (confirm(`Are you sure you want to void invoice ${s.invoice_number}?`)) {
-                          voidSale(s.id, 'Customer requested cancellation');
-                        }
-                      }}
-                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded text-[11px] font-semibold"
+                      onClick={() => setVoidTarget(s)}
+                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded text-[11px] font-semibold cursor-pointer"
                     >
                       Void
                     </button>
@@ -339,6 +339,39 @@ const SalesHistoryView: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {voidTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+              <span>Void Invoice #{voidTarget.invoice_number}?</span>
+            </h3>
+            <p className="text-xs text-slate-600">
+              এই ইনভয়েস বাতিল করলে পণ্যের স্টক অটোমেটিক্যালি ফিরে আসবে এবং কাস্টমার বাকি (যদি থাকে) সমন্বয় করা হবে।
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setVoidTarget(null)}
+                className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  voidSale(voidTarget.id, 'Cancelled by authorized user');
+                  setVoidTarget(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Confirm Void
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -347,12 +380,20 @@ const SalesHistoryView: React.FC = () => {
 /*                                SETTINGS VIEW                              */
 /* -------------------------------------------------------------------------- */
 const SettingsView: React.FC = () => {
-  const { store, updateStore, clearTransactionHistory, wipeAllData, resetToDemoData, activeUser, setActiveTab } = useApp();
+  const { store, updateStore, clearTransactionHistory, wipeAllData, resetToDemoData, activeUser, checkPermission, setActiveTab } = useApp();
   const [form, setForm] = useState(store);
   const [savedMsg, setSavedMsg] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    type: 'clear_history' | 'wipe_all' | 'reset_demo';
+    title: string;
+    description: string;
+    keyword: string;
+  } | null>(null);
+  const [confirmInput, setConfirmInput] = useState('');
+  const [confirmError, setConfirmError] = useState('');
 
-  if (activeUser?.role === 'visitor') {
+  if (!checkPermission('settings_manage')) {
     return (
       <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
         <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
@@ -361,7 +402,7 @@ const SettingsView: React.FC = () => {
         <div className="space-y-1">
           <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
           <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-            ভিজিটর অ্যাকাউন্টে স্টোর সেটিংস দেখার বা পরিবর্তন করার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
+            আপনার অ্যাকাউন্টে স্টোর সেটিংস দেখার বা পরিবর্তন করার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
           </p>
         </div>
         <div className="pt-2">
@@ -376,13 +417,6 @@ const SettingsView: React.FC = () => {
       </div>
     );
   }
-  const [confirmModal, setConfirmModal] = useState<{
-    type: 'clear_history' | 'wipe_all' | 'reset_demo';
-    title: string;
-    description: string;
-    keyword: string;
-  } | null>(null);
-  const [confirmInput, setConfirmInput] = useState('');
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -391,10 +425,10 @@ const SettingsView: React.FC = () => {
     setTimeout(() => setSavedMsg(false), 3000);
   };
 
-  const handleExecuteDataAction = () => {
+  const handleExecuteDataAction = async () => {
     if (!confirmModal) return;
     if (confirmInput.trim().toUpperCase() !== confirmModal.keyword) {
-      alert(`অনুগ্রহ করে নিশ্চিত করতে '${confirmModal.keyword}' টাইপ করুন (Please type ${confirmModal.keyword})`);
+      setConfirmError(`অনুগ্রহ করে নিশ্চিত করতে '${confirmModal.keyword}' লিখুন`);
       return;
     }
 
@@ -405,12 +439,13 @@ const SettingsView: React.FC = () => {
       wipeAllData();
       setActionSuccess('সম্পূর্ণ ডেটা মুছে স্টোর একদম নতুন অবস্থায় সেট করা হয়েছে। All store data wiped clean for fresh start.');
     } else if (confirmModal.type === 'reset_demo') {
-      resetToDemoData();
+      await resetToDemoData();
       setActionSuccess('স্টোর সফলভাবে ডেমো ডেটায় রিসেট হয়েছে। Database reset to default demo seeds.');
     }
 
     setConfirmModal(null);
     setConfirmInput('');
+    setConfirmError('');
     setTimeout(() => setActionSuccess(null), 5000);
   };
 
@@ -440,6 +475,56 @@ const SettingsView: React.FC = () => {
 
       <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
         <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">দোকানের তথ্য ও রসিদ সেটিংস (Store Profile & Receipt)</h2>
+        
+        {/* Shop Logo Upload Section */}
+        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-white border border-slate-300 overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
+            {form.store_logo ? (
+              <img src={form.store_logo} alt="Store Logo" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-[#201c56] text-white flex items-center justify-center font-bold text-2xl">
+                {form.store_name?.charAt(0) || 'S'}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 space-y-1 text-center sm:text-left">
+            <span className="text-xs font-bold text-slate-800 block">দোকানের লোগো (Shop Logo Upload)</span>
+            <p className="text-[11px] text-slate-500">
+              আপনার দোকানের লোগো আপলোড করুন। এটি হেডার, সাইডবার ও থার্মাল রসিদে প্রিন্ট হবে।
+            </p>
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+              <label className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5 transition-colors">
+                <Upload className="w-3.5 h-3.5" />
+                <span>লোগো আপলোড করুন (Upload Logo)</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      setForm({ ...form, store_logo: reader.result as string, receipt_show_logo: true });
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              {form.store_logo && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, store_logo: undefined })}
+                  className="px-3 py-1.5 bg-white hover:bg-rose-50 border border-slate-200 text-rose-600 rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>লোগো মুছুন (Remove)</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Store Name *</label>
@@ -504,12 +589,77 @@ const SettingsView: React.FC = () => {
               className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
             />
           </div>
+
+          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Due Overdue Alert Days (বকেয়া রিমাইন্ডার দিন)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={form.due_alert_days ?? 7}
+                onChange={(e) =>
+                  setForm({ ...form, due_alert_days: parseInt(e.target.value, 10) || 7 })
+                }
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Priority Due Alert Amount ({form.currency_symbol})
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={form.due_alert_threshold ?? 500}
+                onChange={(e) =>
+                  setForm({ ...form, due_alert_threshold: parseFloat(e.target.value) || 0 })
+                }
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Payment Info for Due SMS / WhatsApp Alerts (bKash / Nagad / Bank)
+              </label>
+              <input
+                type="text"
+                value={form.due_payment_info || ''}
+                onChange={(e) => setForm({ ...form, due_payment_info: e.target.value })}
+                placeholder="e.g. bKash/Nagad Personal: 01711-223344"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="md:col-span-2 pt-2">
+            <label className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+              <div>
+                <span className="text-xs font-bold text-slate-800 block">
+                  Public Demo Visitor Account (demo / 1234)
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  লাইভ দোকানে নিরাপত্তার জন্য এটি বন্ধ রাখুন (Disable Demo Login for production security).
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={form.demo_mode_enabled !== false}
+                onChange={(e) => setForm({ ...form, demo_mode_enabled: e.target.checked })}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="pt-3 border-t border-slate-100 flex justify-end">
           <button
             type="submit"
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 transition-colors"
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 transition-colors cursor-pointer"
           >
             <Save className="w-4 h-4" />
             <span>Save Configuration</span>
@@ -611,10 +761,14 @@ const SettingsView: React.FC = () => {
                 type="text"
                 placeholder={`Type ${confirmModal.keyword}`}
                 value={confirmInput}
-                onChange={(e) => setConfirmInput(e.target.value)}
+                onChange={(e) => {
+                  setConfirmInput(e.target.value);
+                  setConfirmError('');
+                }}
                 className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold text-center tracking-widest text-rose-600 focus:outline-none focus:border-rose-500 uppercase"
                 autoFocus
               />
+              {confirmError && <p className="text-[11px] text-rose-600 font-semibold pt-1">{confirmError}</p>}
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -623,16 +777,17 @@ const SettingsView: React.FC = () => {
                 onClick={() => {
                   setConfirmModal(null);
                   setConfirmInput('');
+                  setConfirmError('');
                 }}
-                className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 বাতিল (Cancel)
               </button>
               <button
                 type="button"
                 disabled={confirmInput.trim().toUpperCase() !== confirmModal.keyword}
-                onClick={handleExecuteDataAction}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                onClick={() => void handleExecuteDataAction()}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
               >
                 নিশ্চিত করুন (Confirm & Proceed)
               </button>
@@ -666,16 +821,14 @@ const GenericTabPlaceholder: React.FC<{ title: string; description: string }> = 
 /* -------------------------------------------------------------------------- */
 const AppContent: React.FC = () => {
   const { activeTab, setActiveTab, printableReceipt, setPrintableReceipt, isAuthenticated, activeUser } = useApp();
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   if (!isAuthenticated) {
     return <LoginScreen />;
   }
 
   const renderTabContent = () => {
-    const isVisitor = activeUser.role === 'visitor';
-    const visitorRestrictedTabs = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit', 'drive'];
-
-    if (isVisitor && visitorRestrictedTabs.includes(activeTab)) {
+    if (!canAccessTab(activeUser, activeTab)) {
       return (
         <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
           <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
@@ -684,7 +837,7 @@ const AppContent: React.FC = () => {
           <div className="space-y-1">
             <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
             <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-              ভিজিটর অ্যাকাউন্টে এই মডিউলটি দেখার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে এবং পরিচালনা করতে পারবেন।
+              আপনার বর্তমান রোলে ({activeUser.role}) এই মডিউলটি দেখার অনুমতি নেই। কেবল অনুমোদিত ইউজার এই ডেটা পরিচালনা করতে পারবেন।
             </p>
           </div>
           <div className="pt-2">
@@ -702,7 +855,7 @@ const AppContent: React.FC = () => {
 
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardView />;
+        return <ModernDashboard />;
       case 'pos':
         return <POSView />;
       case 'products':
@@ -739,17 +892,17 @@ const AppContent: React.FC = () => {
       case 'audit':
         return <AuditLogsManagement />;
       default:
-        return <DashboardView />;
+        return <ModernDashboard />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <SidebarNav />
-        <main className="flex-1 overflow-y-auto bg-slate-50">{renderTabContent()}</main>
-      </div>
+    <div className="min-h-screen bg-[#fafafc] flex flex-col font-sans text-slate-800">
+      <Header onToggleMobileMenu={() => setIsMobileOpen(true)} />
+      <SidebarNav isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
+      <main className="flex-1 w-full bg-[#fafafc]">
+        {renderTabContent()}
+      </main>
 
       {/* Thermal Receipt Print Popup Modal */}
       {printableReceipt && (

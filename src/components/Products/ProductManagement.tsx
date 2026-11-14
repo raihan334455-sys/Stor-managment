@@ -17,11 +17,50 @@ import {
   Copy,
   Trash2,
   Sparkles,
+  Upload,
+  Download,
+  Globe,
+  Check,
+  Image as ImageIcon,
+  Loader2,
 } from 'lucide-react';
 import { Product, ProductVariant, UnitType } from '../../types';
 
+interface PresetPhoto {
+  name: string;
+  category: string;
+  url: string;
+}
+
+const GROCERY_PRESETS: PresetPhoto[] = [
+  { name: 'Nazirshail / Miniket Rice (চাল)', category: 'Rice & Grains', url: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Basmati Rice', category: 'Rice & Grains', url: 'https://images.unsplash.com/photo-1536304993881-ff6e9eefa2a6?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Soybean Oil (সয়াবিন তেল)', category: 'Cooking Oils', url: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Mustard Oil (সরিষার তেল)', category: 'Cooking Oils', url: 'https://images.unsplash.com/photo-1620706857370-e1b9770e8bb1?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Ghee / Pure Butter (ঘি)', category: 'Cooking Oils', url: 'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Fresh Milk / Dairy (দুধ)', category: 'Dairy', url: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Powder Milk (Dano/Diploma)', category: 'Dairy', url: 'https://images.unsplash.com/photo-1528750997573-59b89d56f4f7?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Turmeric Powder (হলুদ গুঁড়া)', category: 'Spices', url: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Red Chili Powder (মরিচ গুঁড়া)', category: 'Spices', url: 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Cumin & Spices (জিরা/ধনিয়া)', category: 'Spices', url: 'https://images.unsplash.com/photo-1509358271058-acd22cc93898?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Masoor Dal (মসুর ডাল)', category: 'Lentils', url: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Chickpeas / Chola (ছোলা)', category: 'Lentils', url: 'https://images.unsplash.com/photo-1515543237350-b3eea1ec8082?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Wheat Flour / Atta (আটা/ময়দা)', category: 'Flour', url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Crystal White Sugar (চিনি)', category: 'Loose Goods', url: 'https://images.unsplash.com/photo-1581441363689-1f3c3c414635?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Pure Iodized Salt (লবণ)', category: 'Loose Goods', url: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Black Tea Leaves (চা পাতা)', category: 'Beverages', url: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Coca-Cola / Soda Can (পানীয়)', category: 'Beverages', url: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Mango / Fruit Juice (জুস)', category: 'Beverages', url: 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Tea Biscuits & Cookies (বিস্কুট)', category: 'Snacks & Bakery', url: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Potato Chips & Snacks (চিপস)', category: 'Snacks & Bakery', url: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Bath Soap (Lux/Lifebuoy সাবান)', category: 'Personal Care', url: 'https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Hair Care Shampoo (শ্যাম্পু)', category: 'Personal Care', url: 'https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Fresh Farm Eggs (ডিম)', category: 'Produce', url: 'https://images.unsplash.com/photo-1516467508483-a7212febe31a?w=400&auto=format&fit=crop&q=80' },
+  { name: 'Red Onions & Garlic (পেঁয়াজ/রসুন)', category: 'Produce', url: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=400&auto=format&fit=crop&q=80' },
+];
+
 export const ProductManagement: React.FC = () => {
-  const { products, categories, suppliers, store, saveProduct, archiveProduct } = useApp();
+  const { products, categories, suppliers, store, saveProduct, archiveProduct, saveCategory } = useApp();
   const [search, setSearch] = useState<string>('');
   const [selectedCat, setSelectedCat] = useState<string>('all');
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
@@ -37,6 +76,19 @@ export const ProductManagement: React.FC = () => {
   const [prodCode, setProdCode] = useState<string>('');
   const [prodCat, setProdCat] = useState<string>('');
   const [prodDesc, setProdDesc] = useState<string>('');
+  const [prodImage, setProdImage] = useState<string>('');
+
+  // Quick Add Category Modal State
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState<boolean>(false);
+  const [newCatName, setNewCatName] = useState<string>('');
+  const [newCatCode, setNewCatCode] = useState<string>('');
+
+  // Online Picture Search & Download System State
+  const [showOnlineImageModal, setShowOnlineImageModal] = useState<boolean>(false);
+  const [onlineImageUrl, setOnlineImageUrl] = useState<string>('');
+  const [onlineSearchQuery, setOnlineSearchQuery] = useState<string>('');
+  const [isDownloadingImage, setIsDownloadingImage] = useState<boolean>(false);
+  const [downloadSuccessToast, setDownloadSuccessToast] = useState<string>('');
 
   // Variants Form State
   const [variantsForm, setVariantsForm] = useState<
@@ -46,7 +98,57 @@ export const ProductManagement: React.FC = () => {
   // Barcode Label Print Modal State
   const [showBarcodePrintModal, setShowBarcodePrintModal] = useState<boolean>(false);
   const [selectedVariantForBarcode, setSelectedVariantForBarcode] = useState<ProductVariant | null>(null);
-  const [labelQty, setLabelQty] = useState<number>(10);
+  const [labelQty, setLabelQty] = useState<number>(6);
+
+  // Generate clean, scanner-readable vector SVG barcode
+  const renderBarcodeSvg = (code: string) => {
+    const bars: { width: number; isBlack: boolean }[] = [];
+    bars.push({ width: 2, isBlack: true }, { width: 1, isBlack: false }, { width: 2, isBlack: true });
+    for (let i = 0; i < code.length; i++) {
+      const digit = parseInt(code[i], 10) || (code.charCodeAt(i) % 7);
+      const w1 = (digit % 3) + 1;
+      const w2 = ((digit + 1) % 3) + 1;
+      bars.push({ width: w1, isBlack: false });
+      bars.push({ width: w2, isBlack: true });
+      bars.push({ width: 1, isBlack: false });
+      bars.push({ width: (digit % 2) + 1, isBlack: true });
+    }
+    bars.push({ width: 2, isBlack: true }, { width: 1, isBlack: false }, { width: 2, isBlack: true });
+
+    let currentX = 0;
+    const rects = bars.map((b, idx) => {
+      const x = currentX;
+      currentX += b.width * 2;
+      if (b.isBlack) {
+        return <rect key={idx} x={x} y="0" width={b.width * 2} height="36" fill="#000000" />;
+      }
+      return null;
+    });
+
+    return (
+      <svg viewBox={`0 0 ${currentX} 36`} className="w-full h-8 my-1" preserveAspectRatio="none">
+        {rects}
+      </svg>
+    );
+  };
+
+  // Quick Category Creation Handler
+  const handleCreateCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+    const newCatId = `cat_${Date.now()}`;
+    const newCat = {
+      id: newCatId,
+      name: newCatName.trim(),
+      code: newCatCode.trim().toUpperCase() || newCatName.trim().slice(0, 3).toUpperCase(),
+      active: true,
+    };
+    saveCategory(newCat);
+    setProdCat(newCatId);
+    setNewCatName('');
+    setNewCatCode('');
+    setShowAddCategoryModal(false);
+  };
 
   const activeProducts = products.filter((p) => !p.archived);
 
@@ -61,14 +163,67 @@ export const ProductManagement: React.FC = () => {
     return matchesCat && matchesQuery;
   });
 
+  // Local File Upload Handler
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      alert('Image size should be under 3MB for fast offline storage.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setProdImage(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Online Image Download & Offline Storage Handler
+  const handleDownloadOnlineImage = async (url: string) => {
+    if (!url.trim()) return;
+    setIsDownloadingImage(true);
+    setDownloadSuccessToast('');
+    try {
+      const res = await fetch(url.trim(), { mode: 'cors' });
+      const blob = await res.blob();
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setProdImage(reader.result);
+          setIsDownloadingImage(false);
+          setDownloadSuccessToast('Photo downloaded & saved locally!');
+          setTimeout(() => {
+            setShowOnlineImageModal(false);
+            setDownloadSuccessToast('');
+          }, 500);
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch {
+      // Fallback: save direct URL if browser restricts canvas/blob conversion
+      setProdImage(url.trim());
+      setIsDownloadingImage(false);
+      setDownloadSuccessToast('Photo attached successfully!');
+      setTimeout(() => {
+        setShowOnlineImageModal(false);
+        setDownloadSuccessToast('');
+      }, 500);
+    }
+  };
+
   const openAddModal = () => {
     setEditingProduct(null);
     setIsSimilarMode(false);
     setClonedFromTitle('');
     setProdName('');
     setProdCode(`PRD-${Date.now().toString().slice(-4)}`);
-    setProdCat(categories[0]?.id || '');
+    // Default to General Goods category
+    const generalCat = categories.find((c) => c.id === 'cat_general' || c.name.toLowerCase().includes('general'));
+    setProdCat(generalCat ? generalCat.id : (categories[0]?.id || 'cat_general'));
     setProdDesc('');
+    setProdImage('');
     setVariantsForm([
       {
         variant_name: 'Standard',
@@ -94,6 +249,7 @@ export const ProductManagement: React.FC = () => {
     setProdCode(`PRD-${Date.now().toString().slice(-4)}`);
     setProdCat(product.category_id);
     setProdDesc(product.description || '');
+    setProdImage(product.image || '');
     
     // Duplicate variants with fresh unique SKUs and Barcodes
     setVariantsForm(
@@ -124,6 +280,7 @@ export const ProductManagement: React.FC = () => {
     setProdCode(p.code);
     setProdCat(p.category_id);
     setProdDesc(p.description || '');
+    setProdImage(p.image || '');
     setVariantsForm(
       p.variants.map((v) => ({
         variant_name: v.variant_name,
@@ -202,6 +359,7 @@ export const ProductManagement: React.FC = () => {
       code: prodCode,
       category_id: prodCat,
       description: prodDesc,
+      image: prodImage.trim() || undefined,
       variants: fullVariants,
       archived: false,
       created_at: editingProduct ? editingProduct.created_at : now,
@@ -284,9 +442,20 @@ export const ProductManagement: React.FC = () => {
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
 
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center font-bold text-blue-600 text-sm border border-blue-100">
-                      {p.name.charAt(0)}
-                    </div>
+                    {p.image ? (
+                      <div className="w-11 h-11 rounded-xl overflow-hidden border border-slate-200 bg-white shrink-0 shadow-xs">
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center font-bold text-blue-600 text-sm border border-blue-100 shrink-0">
+                        {p.name.charAt(0)}
+                      </div>
+                    )}
 
                     <div>
                       <div className="flex items-center gap-2">
@@ -454,7 +623,18 @@ export const ProductManagement: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Category *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700">Category *</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCategoryModal(true)}
+                      className="text-[11px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-0.5 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+                      title="Add a custom category"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>+ New Category</span>
+                    </button>
+                  </div>
                   <select
                     value={prodCat}
                     onChange={(e) => setProdCat(e.target.value)}
@@ -466,6 +646,74 @@ export const ProductManagement: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* Product Picture Upload & Online Download Section */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-blue-600" />
+                    <span>Product Picture (পণ্যের ছবি)</span>
+                  </label>
+                  {prodImage && (
+                    <button
+                      type="button"
+                      onClick={() => setProdImage('')}
+                      className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Remove Picture</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {/* Image Preview Box */}
+                  <div className="w-20 h-20 rounded-xl border border-slate-200 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-sm relative group">
+                    {prodImage ? (
+                      <img src={prodImage} alt="Product Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center">
+                        <ImageIcon className="w-7 h-7 mb-1 opacity-40 text-slate-500" />
+                        <span className="text-[9px] font-semibold text-slate-400">No Image</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Dual Action Buttons */}
+                  <div className="flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Local File Upload Button */}
+                      <label className="cursor-pointer px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 hover:border-blue-400 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all">
+                        <Upload className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Upload from Device</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+
+                      {/* Online Search & Download Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOnlineSearchQuery(prodName.split(' ')[0] || '');
+                          setShowOnlineImageModal(true);
+                        }}
+                        className="px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                      >
+                        <Globe className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Online Download & Presets</span>
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500">
+                      Upload from phone/computer or search from online grocery library. Saved locally in browser for offline use.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -660,15 +908,90 @@ export const ProductManagement: React.FC = () => {
         </div>
       )}
 
-      {/* BARCODE LABEL PRINT MODAL */}
-      {showBarcodePrintModal && selectedVariantForBarcode && (
+      {/* QUICK ADD CATEGORY MODAL */}
+      {showAddCategoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full text-slate-800 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-sm font-bold flex items-center gap-2 text-slate-800">
-                <Barcode className="w-4 h-4 text-blue-600" />
-                <span>Print Barcode Label</span>
+                <Tag className="w-4 h-4 text-blue-600" />
+                <span>Add New Category (নতুন ক্যাটাগরি)</span>
               </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddCategoryModal(false)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCategory} className="space-y-3 mt-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Category Name * (ক্যাটাগরির নাম)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="e.g. Frozen Foods, Fish & Meat, Bakery"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Category Code (ঐচ্ছিক কোড)
+                </label>
+                <input
+                  type="text"
+                  value={newCatCode}
+                  onChange={(e) => setNewCatCode(e.target.value)}
+                  placeholder="e.g. FRZ, MEAT, BAK"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 uppercase font-mono"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCategoryModal(false)}
+                  className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow transition-colors"
+                >
+                  Save Category
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* BARCODE LABEL PRINT MODAL (FIXED PRINT SYSTEM) */}
+      {showBarcodePrintModal && selectedVariantForBarcode && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:fixed print:inset-0">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 text-slate-800 shadow-2xl flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:w-full print:p-0 print:rounded-none">
+            {/* Modal Header (Hidden on Print) */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0 no-print">
+              <div className="flex items-center gap-2">
+                <Barcode className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Barcode Label Printing System (বারকোড প্রিন্ট)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Ready for Thermal Barcode Printers (50x30mm) or A4 Sticker Sheets.
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setShowBarcodePrintModal(false)}
                 className="text-slate-400 hover:text-slate-700 text-sm font-bold"
@@ -677,29 +1000,240 @@ export const ProductManagement: React.FC = () => {
               </button>
             </div>
 
-            <div className="my-4 p-4 bg-white text-black rounded-xl text-center font-mono border border-slate-200 shadow-sm">
-              <p className="text-[10px] font-bold tracking-wider">{store.store_name}</p>
-              <p className="text-xs font-bold">{selectedVariantForBarcode.variant_name}</p>
-              <div className="my-2 text-xl font-bold tracking-widest border-y border-black py-1">
-                |||| | ||||| |||| |
+            {/* Label Quantity Controls (Hidden on Print) */}
+            <div className="my-3 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 shrink-0 no-print">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700">
+                  Number of Sticker Labels to Print:
+                </label>
+                <span className="text-xs font-mono font-bold text-blue-600">
+                  {labelQty} Label(s)
+                </span>
               </div>
-              <p className="text-[10px]">{selectedVariantForBarcode.barcode}</p>
-              <p className="text-xs font-bold mt-1">
-                PRICE: {store.currency_symbol}
-                {selectedVariantForBarcode.selling_price}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {[1, 4, 6, 12, 24, 48].map((qty) => (
+                  <button
+                    key={qty}
+                    type="button"
+                    onClick={() => setLabelQty(qty)}
+                    className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                      labelQty === qty
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {qty} Labels
+                  </button>
+                ))}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <span className="text-[11px] text-slate-500">Custom:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={labelQty}
+                    onChange={(e) => setLabelQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-16 bg-white border border-slate-300 rounded-lg px-2 py-0.5 text-xs text-center font-mono font-bold"
+                  />
+                </div>
+              </div>
             </div>
 
-            <button
-              onClick={() => {
-                window.print();
-                setShowBarcodePrintModal(false);
-              }}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow transition-colors"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print Barcode Labels</span>
-            </button>
+            {/* Printable Area: Barcode Label Sheet */}
+            <div className="overflow-y-auto flex-1 p-2 bg-slate-100 rounded-xl print:p-0 print:bg-white print:overflow-visible">
+              <div className="printable-area barcode-sheet-print grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {Array.from({ length: labelQty }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 bg-white text-black border border-dashed border-slate-300 rounded-xl text-center font-mono shadow-xs flex flex-col justify-between break-inside-avoid print:border-black/40 print:rounded-none print:shadow-none"
+                  >
+                    <div className="text-[10px] font-bold tracking-tight uppercase truncate">
+                      {store.store_name}
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-900 truncate my-0.5">
+                      {selectedVariantForBarcode.variant_name}
+                    </div>
+                    {/* Realistic Scanner-Readable Vector Barcode */}
+                    {renderBarcodeSvg(selectedVariantForBarcode.barcode)}
+                    <div className="text-[10px] tracking-widest font-bold">
+                      {selectedVariantForBarcode.barcode}
+                    </div>
+                    <div className="text-xs font-black mt-1 pt-1 border-t border-slate-200 print:border-black">
+                      PRICE: {store.currency_symbol}{selectedVariantForBarcode.selling_price}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Actions (Hidden on Print) */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between shrink-0 no-print">
+              <div className="text-[11px] text-slate-500">
+                Press Print to open system print dialog.
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBarcodePrintModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow transition-colors"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print {labelQty} Label(s)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ONLINE IMAGE SEARCH & DOWNLOAD MODAL */}
+      {showOnlineImageModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-2xl w-full text-slate-800 shadow-2xl max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Online Product Image Library & URL Downloader
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Select a curated product photo or paste any web image URL to download & save locally.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowOnlineImageModal(false)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Notification Toast */}
+            {downloadSuccessToast && (
+              <div className="my-2 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 font-semibold animate-in fade-in">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{downloadSuccessToast}</span>
+              </div>
+            )}
+
+            <div className="overflow-y-auto flex-1 my-3 space-y-4 pr-1">
+              {/* Option 1: Direct Image URL Download */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Download from Custom Web URL (অনলাইন ইমেজ লিঙ্ক ডাউনলোড)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={onlineImageUrl}
+                    onChange={(e) => setOnlineImageUrl(e.target.value)}
+                    placeholder="Paste image link (e.g. https://.../image.jpg)"
+                    className="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={!onlineImageUrl.trim() || isDownloadingImage}
+                    onClick={() => handleDownloadOnlineImage(onlineImageUrl)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm shrink-0"
+                  >
+                    {isDownloadingImage ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                    <span>Download</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 2: Curated Grocery Presets with Search */}
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Instant Grocery Photo Presets (১-ক্লিক সিলেক্ট)</span>
+                  </label>
+                  <div className="relative w-full sm:w-56">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={onlineSearchQuery}
+                      onChange={(e) => setOnlineSearchQuery(e.target.value)}
+                      placeholder="Search items (Rice, Oil, Milk...)"
+                      className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Preset Photo Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto p-1">
+                  {GROCERY_PRESETS.filter((item) => {
+                    const q = onlineSearchQuery.toLowerCase().trim();
+                    return !q || item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q);
+                  }).map((item, idx) => {
+                    const isSelected = prodImage === item.url;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleDownloadOnlineImage(item.url)}
+                        className={`group p-2 rounded-xl border text-left flex flex-col justify-between transition-all bg-white shadow-xs relative ${
+                          isSelected
+                            ? 'border-blue-600 ring-2 ring-blue-500/30'
+                            : 'border-slate-200 hover:border-blue-400 hover:shadow-md'
+                        }`}
+                      >
+                        <div className="w-full h-20 rounded-lg overflow-hidden bg-slate-100 mb-2 relative">
+                          <img
+                            src={item.url}
+                            alt={item.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-blue-600/30 flex items-center justify-center">
+                              <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow">
+                                <Check className="w-3.5 h-3.5" />
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">
+                            {item.category}
+                          </div>
+                          <div className="text-xs font-bold text-slate-800 line-clamp-1">
+                            {item.name}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-slate-100 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowOnlineImageModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

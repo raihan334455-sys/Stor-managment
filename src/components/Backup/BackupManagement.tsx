@@ -33,10 +33,11 @@ export const BackupManagement: React.FC = () => {
     wipeAllData,
     resetToDemoData,
     activeUser,
+    checkPermission,
     setActiveTab,
   } = useApp();
 
-  if (activeUser?.role === 'visitor') {
+  if (!checkPermission('backup_manage')) {
     return (
       <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
         <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
@@ -45,7 +46,7 @@ export const BackupManagement: React.FC = () => {
         <div className="space-y-1">
           <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
           <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-            ভিজিটর অ্যাকাউন্টে ব্যাকআপ ও রিস্টোর সেকশন দেখার অনুমতি নেই। কেবল অ্যাডমিন এই অপশন দেখতে পারবেন।
+            আপনার অ্যাকাউন্টে ব্যাকআপ ও রিস্টোর সেকশন দেখার অনুমতি নেই। কেবল অ্যাডমিন এই অপশন দেখতে পারবেন।
           </p>
         </div>
         <div className="pt-2">
