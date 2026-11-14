@@ -23,8 +23,10 @@ import {
   Check,
   Image as ImageIcon,
   Loader2,
+  QrCode,
 } from 'lucide-react';
 import { Product, ProductVariant, UnitType } from '../../types';
+import { QrBarcodeScannerModal } from '../Scanner/QrBarcodeScannerModal';
 
 interface PresetPhoto {
   name: string;
@@ -70,6 +72,9 @@ export const ProductManagement: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isSimilarMode, setIsSimilarMode] = useState<boolean>(false);
   const [clonedFromTitle, setClonedFromTitle] = useState<string>('');
+  const [scannerTarget, setScannerTarget] = useState<
+    { type: 'search' } | { type: 'variant'; index: number } | null
+  >(null);
 
   // Form State
   const [prodName, setProdName] = useState<string>('');
@@ -405,8 +410,17 @@ export const ProductManagement: React.FC = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by Product Name, Code, Barcode or SKU..."
-            className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
+            className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-24 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
           />
+          <button
+            type="button"
+            onClick={() => setScannerTarget({ type: 'search' })}
+            title="Scan QR or Barcode to search product"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[11px] font-bold text-white bg-[#5b46b5] hover:bg-[#4a379c] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>SCAN</span>
+          </button>
         </div>
 
         <select
@@ -787,17 +801,27 @@ export const ProductManagement: React.FC = () => {
 
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-600">Barcode</label>
-                          <input
-                            type="text"
-                            required
-                            value={v.barcode}
-                            onChange={(e) => {
-                              const updated = [...variantsForm];
-                              updated[idx].barcode = e.target.value;
-                              setVariantsForm(updated);
-                            }}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-mono"
-                          />
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              required
+                              value={v.barcode}
+                              onChange={(e) => {
+                                const updated = [...variantsForm];
+                                updated[idx].barcode = e.target.value;
+                                setVariantsForm(updated);
+                              }}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setScannerTarget({ type: 'variant', index: idx })}
+                              title="Scan product Barcode / QR"
+                              className="p-1.5 rounded-lg bg-[#5b46b5] hover:bg-[#4a379c] text-white shrink-0 transition-colors cursor-pointer"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <div>
@@ -1237,6 +1261,36 @@ export const ProductManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* QR & BARCODE SCANNER MODAL */}
+      <QrBarcodeScannerModal
+        isOpen={scannerTarget !== null}
+        onClose={() => setScannerTarget(null)}
+        onScan={(decodedText) => {
+          const clean = decodedText.trim();
+          if (!clean || !scannerTarget) return;
+          if (scannerTarget.type === 'search') {
+            setSearch(clean);
+          } else if (scannerTarget.type === 'variant') {
+            setVariantsForm((prev) => {
+              const updated = [...prev];
+              if (updated[scannerTarget.index]) {
+                updated[scannerTarget.index] = {
+                  ...updated[scannerTarget.index],
+                  barcode: clean,
+                };
+              }
+              return updated;
+            });
+          }
+        }}
+        title={
+          scannerTarget?.type === 'variant'
+            ? 'Scan Variant Barcode / QR'
+            : 'Search Product by QR / Barcode'
+        }
+        subtitle="প্যাকেটের Barcode বা QR Code স্ক্যান করুন"
+      />
     </div>
   );
 };

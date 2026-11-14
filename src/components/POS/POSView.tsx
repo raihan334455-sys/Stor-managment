@@ -28,6 +28,8 @@ import {
   Package,
   BellRing,
   Calendar,
+  QrCode,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   Product,
@@ -39,6 +41,7 @@ import {
   Sale,
 } from '../../types';
 import { DueAlertModal } from '../Customers/DueAlertModal';
+import { QrBarcodeScannerModal, ScanResultFeedback } from '../Scanner/QrBarcodeScannerModal';
 
 export const POSView: React.FC = () => {
   const {
@@ -107,8 +110,16 @@ export const POSView: React.FC = () => {
   const [splitDetails, setSplitDetails] = useState<SplitPaymentDetail>({ cash: 0, bkash: 0 });
   const [paymentNotes, setPaymentNotes] = useState<string>('');
 
-  // Barcode Auto-Focus Ref
+  // Barcode Auto-Focus Ref & QR/Barcode Scanner Modal
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
+  const [scanFeedback, setScanFeedback] = useState<ScanResultFeedback | null>(null);
+
+  useEffect(() => {
+    if (!scanFeedback) return;
+    const t = setTimeout(() => setScanFeedback(null), 4500);
+    return () => clearTimeout(t);
+  }, [scanFeedback]);
 
   // Filter Active Products & Flatten Variants
   const activeProducts = products.filter((p) => !p.archived);
@@ -138,20 +149,75 @@ export const POSView: React.FC = () => {
     return matchesCategory && matchesQuery;
   });
 
-  // Handle Barcode Auto-Scan
-  const handleBarcodeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
+  // Extract barcode/SKU candidates from plain barcode/SKU text, JSON QR, or URL QR
+  const extractScannedCandidates = (raw: string): string[] => {
+    const trimmed = raw.trim();
+    const candidates: string[] = [trimmed];
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        for (const k of ['barcode', 'sku', 'code', 'id']) {
+          if (typeof parsed?.[k] === 'string' && parsed[k].trim()) {
+            candidates.unshift(parsed[k].trim());
+          }
+        }
+      } catch {
+        // Not JSON
+      }
+    }
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const url = new URL(trimmed);
+        for (const k of ['barcode', 'sku', 'code', 'q']) {
+          const val = url.searchParams.get(k);
+          if (val?.trim()) candidates.unshift(val.trim());
+        }
+      } catch {
+        // Not valid URL
+      }
+    }
+    return Array.from(new Set(candidates));
+  };
 
-    // Search exact barcode match first
-    const exactMatch = allVariants.find(
-      (v) => v.barcode.toLowerCase() === searchQuery.trim().toLowerCase()
+  // Handle Barcode / QR Scan from Camera, Image, or Keyboard Scanner
+  const processScannedCode = (rawCode: string, fromCameraModal = false) => {
+    const candidates = extractScannedCandidates(rawCode);
+    const exactMatch = allVariants.find((v) =>
+      candidates.some(
+        (c) =>
+          v.barcode.toLowerCase() === c.toLowerCase() ||
+          v.sku.toLowerCase() === c.toLowerCase()
+      )
     );
 
     if (exactMatch) {
       addToCart(exactMatch);
       setSearchQuery('');
+      setScanFeedback({
+        status: 'success',
+        code: candidates[0],
+        message: `কার্টে যোগ হয়েছে: ${exactMatch.product_name} (${exactMatch.variant_name})`,
+      });
+    } else {
+      const displayCode = candidates[0] || rawCode.trim();
+      if (!fromCameraModal) {
+        // Keep current search filter if typing manually
+      } else {
+        setSearchQuery(displayCode);
+      }
+      setScanFeedback({
+        status: 'not_found',
+        code: displayCode,
+        message: `কোনো প্রোডাক্ট পাওয়া যায়নি (${displayCode}) — নিচের তালিকায় খুঁজুন`,
+      });
     }
+  };
+
+  // Handle Barcode Auto-Scan (Hardware Scanner / Enter key)
+  const handleBarcodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    processScannedCode(searchQuery, false);
   };
 
   // Add Item to Cart
@@ -645,13 +711,21 @@ export const POSView: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Scan Barcode or Search Product (Name, Barcode, SKU)..."
-              className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800 placeholder-slate-400 rounded-xl pl-10 pr-16 py-2 text-xs focus:outline-none transition-all shadow-sm"
+              placeholder="Scan QR/Barcode or Search Product (Name, Barcode, SKU)..."
+              className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800 placeholder-slate-400 rounded-xl pl-10 pr-24 py-2 text-xs focus:outline-none transition-all shadow-sm"
             />
-            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-              <Barcode className="w-3.5 h-3.5 text-blue-600" />
+            <button
+              type="button"
+              onClick={() => {
+                setScanFeedback(null);
+                setShowScannerModal(true);
+              }}
+              title="Open QR & Barcode Camera Scanner"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[11px] font-bold text-white bg-[#5b46b5] hover:bg-[#4a379c] px-2.5 py-1 rounded-lg shadow-xs transition-colors cursor-pointer"
+            >
+              <QrCode className="w-3.5 h-3.5" />
               <span>SCAN</span>
-            </div>
+            </button>
           </form>
 
           {/* Held Bills Counter */}
@@ -667,6 +741,33 @@ export const POSView: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* QR / Barcode Scan Feedback Toast */}
+        {scanFeedback && !showScannerModal && (
+          <div
+            className={`mb-3 px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs shadow-xs ${
+              scanFeedback.status === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-amber-50 border-amber-200 text-amber-900'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              {scanFeedback.status === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              )}
+              <span className="font-medium truncate">{scanFeedback.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setScanFeedback(null)}
+              className="p-1 rounded hover:bg-black/5 shrink-0 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Post-Sale Due Quick Alert Bar */}
         {recentDueSaleAlert && (
@@ -1377,6 +1478,17 @@ export const POSView: React.FC = () => {
           onClose={() => setDueAlertTarget(null)}
         />
       )}
+
+      {/* QR & BARCODE CAMERA SCANNER MODAL */}
+      <QrBarcodeScannerModal
+        isOpen={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onScan={(decodedText) => processScannedCode(decodedText, true)}
+        title="POS QR & Barcode Scanner"
+        subtitle="পণ্যের QR Code বা Barcode স্ক্যান করলে অটোমেটিক কার্টে যোগ হবে"
+        allowContinuous={true}
+        feedback={scanFeedback}
+      />
     </div>
   );
 };
