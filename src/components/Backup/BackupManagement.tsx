@@ -155,7 +155,7 @@ export const BackupManagement: React.FC = () => {
 
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-5xl">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-5xl">
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
@@ -393,7 +393,7 @@ export const BackupManagement: React.FC = () => {
       {/* Confirmation Modal */}
       {activeUser.role === 'admin' && showResetConfirm && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <span>

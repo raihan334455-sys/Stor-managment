@@ -632,9 +632,9 @@ export const POSView: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col xl:flex-row xl:h-[calc(100vh-8.5rem)] min-h-[540px] bg-[#fafafc] overflow-hidden select-none text-slate-800 relative max-w-[1440px] mx-auto w-full">
+    <div className="flex flex-col xl:flex-row xl:h-[calc(100vh-8.5rem)] min-h-[540px] bg-[#fafafc] xl:overflow-hidden select-none text-slate-800 relative max-w-[1440px] mx-auto w-full">
       {/* LEFT / CENTER: PRODUCT & VARIANT CATALOG GRID */}
-      <div className="flex-1 flex flex-col p-4 overflow-hidden border-r border-slate-200">
+      <div className="flex-1 flex flex-col p-3 sm:p-4 xl:overflow-hidden xl:border-r border-slate-200">
         {/* Top Filter Bar */}
         <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
           {/* Search & Barcode Scan Input */}
@@ -733,7 +733,7 @@ export const POSView: React.FC = () => {
         </div>
 
         {/* Product Variant Grid */}
-        <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5 gap-3 pr-1 pb-20 xl:pb-2">
+        <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5 gap-3 pr-1 pb-24 xl:pb-2">
           {filteredVariants.map((variant) => {
             const isOutOfStock = variant.stock_quantity <= 0;
             const isLowStock = variant.stock_quantity <= variant.min_stock_level && !isOutOfStock;
@@ -896,7 +896,7 @@ export const POSView: React.FC = () => {
       {/* WEIGHT & DECIMAL QUANTITY MODAL */}
       {showWeightModal && selectedCartIndex !== null && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full text-slate-800 shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full text-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Scale className="w-5 h-5 text-blue-600" />
@@ -952,7 +952,7 @@ export const POSView: React.FC = () => {
       {/* DISCOUNT MODAL */}
       {showDiscountModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full text-slate-800 shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full text-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Percent className="w-5 h-5 text-blue-600" />
@@ -1010,7 +1010,7 @@ export const POSView: React.FC = () => {
       {/* QUICK ADD CUSTOMER MODAL (also auto-opens on Walk-in Due Checkout) */}
       {showAddCustomerModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full text-slate-800 shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full text-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-[#ec1f73]" />
@@ -1219,7 +1219,7 @@ export const POSView: React.FC = () => {
       {/* CHECKOUT & PAYMENT MODAL */}
       {showPaymentModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-lg w-full text-slate-800 shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-lg w-full text-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-blue-600" />

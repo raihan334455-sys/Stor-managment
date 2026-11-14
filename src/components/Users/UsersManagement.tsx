@@ -586,7 +586,7 @@ export const UsersManagement: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Access Role *</label>
                   <select
@@ -662,7 +662,7 @@ export const UsersManagement: React.FC = () => {
       {/* Verified PIN Switch User Modal */}
       {switchTargetUser && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <Lock className="w-4 h-4 text-blue-600" />
@@ -718,7 +718,7 @@ export const UsersManagement: React.FC = () => {
       {/* Delete Confirmation Modal */}
       {confirmDeleteUser && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4">
             <h3 className="text-base font-bold text-slate-900">Remove Salesman / Staff?</h3>
             <p className="text-xs text-slate-600">
               আপনি কি নিশ্চিত যে <strong>{confirmDeleteUser.name}</strong> (@{confirmDeleteUser.username}) অ্যাকাউন্টটি মুছে ফেলতে চান?

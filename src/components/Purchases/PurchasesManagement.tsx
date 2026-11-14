@@ -202,7 +202,7 @@ export const PurchasesManagement: React.FC = () => {
   const totalPendingDue = purchases.reduce((sum, p) => sum + p.due_amount, 0);
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Header and Quick Stats */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -522,6 +522,7 @@ export const PurchasesManagement: React.FC = () => {
 
               {/* Items List Table */}
               <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
@@ -573,6 +574,7 @@ export const PurchasesManagement: React.FC = () => {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* Summary and Payment Section */}

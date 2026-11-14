@@ -23,7 +23,6 @@ import {
   LogOut,
   WifiOff,
   Clock,
-  Printer,
   ShieldAlert,
   BellRing,
   MessageCircle,
@@ -237,42 +236,38 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
           </div>
         </div>
       )}
-      {/* 1. Deep Royal Purple Top Announcement Bar (Matching reference #5b46b5) */}
-      <div className="bg-[#5b46b5] text-white text-[11px] px-4 sm:px-6 lg:px-8 py-1.5">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto whitespace-nowrap">
-            <span className="inline-flex items-center gap-1.5 font-medium">
+      {/* 1. Deep Royal Purple Top Announcement Bar (Single clean line on all devices) */}
+      <div className="bg-[#5b46b5] text-white text-[11px] px-3 sm:px-6 lg:px-8 py-1.5">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 whitespace-nowrap">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <span className="inline-flex items-center gap-1.5 font-medium shrink-0">
               <WifiOff className="w-3 h-3 text-pink-300" />
-              <span>100% Offline Grocery POS</span>
+              <span>Offline POS</span>
             </span>
             <button
               onClick={() => setActiveTab('cash')}
-              className="hidden sm:inline-flex items-center gap-1.5 hover:text-pink-200 transition-colors cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-1 hover:text-pink-200 transition-colors cursor-pointer shrink-0"
             >
               <Clock className="w-3 h-3 text-pink-300" />
               <span>
                 Shift:{' '}
                 {openCashSession
-                  ? `Active (${store.currency_symbol}${openCashSession.opening_cash.toLocaleString()})`
+                  ? `${store.currency_symbol}${openCashSession.opening_cash.toLocaleString()}`
                   : 'Closed'}
               </span>
             </button>
-            <span className="hidden md:inline-flex items-center gap-1.5 text-white/90">
-              <Printer className="w-3 h-3 text-pink-300" />
-              <span>{store.receipt_size} Thermal Ready</span>
-            </span>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
             <button
               onClick={toggleLanguage}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-white/90 hover:text-white cursor-pointer"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-white/95 hover:text-white cursor-pointer"
               title="Switch Language"
             >
               <Globe className="w-3 h-3" />
               <span>{store.language === 'en' ? 'EN' : 'বাংলা'}</span>
             </button>
-            <span className="hidden sm:inline-flex items-center gap-1 font-mono text-white/95">
+            <span className="inline-flex items-center gap-1 font-mono text-white/95 text-[11px]">
               <Phone className="w-3 h-3 text-pink-300" />
               <span>{store.store_phone || '+880 1700-000000'}</span>
             </span>
@@ -281,13 +276,13 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
       </div>
 
       {/* 2. Crisp White Main Navigation Bar */}
-      <div className="bg-white border-b border-slate-100 px-4 sm:px-6 lg:px-8 py-3">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-4">
+      <div className="bg-white border-b border-slate-100 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand Lockup with Hot-Pink Shopping Bag Badge */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 lg:flex-initial">
             <button
               onClick={onToggleMobileMenu}
-              className="lg:hidden p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="lg:hidden p-1.5 sm:p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shrink-0"
               title="Open Menu"
             >
               <Menu className="w-5 h-5" />
@@ -295,10 +290,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
 
             <button
               onClick={() => setShowLogoModal(true)}
-              className="flex items-center gap-2.5 group cursor-pointer text-left min-w-0"
+              className="flex items-center gap-2 sm:gap-2.5 group cursor-pointer text-left min-w-0"
               title="Click to customize shop logo"
             >
-              <div className="w-10 h-10 rounded-xl bg-[#ec1f73] text-white flex items-center justify-center shadow-sm overflow-hidden shrink-0 group-hover:scale-105 transition-transform">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#ec1f73] text-white flex items-center justify-center shadow-sm overflow-hidden shrink-0 group-hover:scale-105 transition-transform">
                 {store.store_logo ? (
                   <img
                     src={store.store_logo}
@@ -306,14 +301,14 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <ShoppingBag className="w-5 h-5" />
+                  <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5" />
                 )}
               </div>
               <div className="min-w-0">
-                <div className="font-extrabold text-base sm:text-lg text-[#1e1b3a] tracking-tight truncate">
+                <div className="font-extrabold text-sm sm:text-lg text-[#1e1b3a] tracking-tight leading-tight break-words">
                   {store.store_name}
                 </div>
-                <div className="text-[11px] text-slate-400 truncate max-w-[180px] sm:max-w-[240px]">
+                <div className="hidden sm:block text-[11px] text-slate-400 truncate max-w-[240px]">
                   {store.store_address || 'Smart Grocery & Retail Store'}
                 </div>
               </div>
@@ -402,10 +397,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
           </nav>
 
           {/* Right Action Icons (Search, Alerts, User, Cart) */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-0.5 sm:gap-2.5 shrink-0">
             <button
               onClick={() => setActiveTab('products')}
-              className="hidden sm:flex w-9 h-9 rounded-full hover:bg-slate-100 text-slate-600 items-center justify-center transition-colors cursor-pointer"
+              className="flex w-8 h-8 sm:w-9 sm:h-9 rounded-full hover:bg-slate-100 text-slate-600 items-center justify-center transition-colors cursor-pointer"
               title="Search Catalog"
             >
               <Search className="w-4 h-4" />
@@ -415,7 +410,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
             <div className="relative">
               <button
                 onClick={() => setShowNotificationModal(!showNotificationModal)}
-                className="w-9 h-9 rounded-full hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors cursor-pointer relative"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors cursor-pointer relative"
                 title="Alerts & Stock Warnings"
               >
                 <Bell className="w-4 h-4" />
@@ -427,7 +422,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
               </button>
 
               {showNotificationModal && (
-                <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 space-y-3">
+                <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-24 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                     <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                       <Bell className="w-4 h-4 text-[#ec1f73]" />
@@ -574,13 +569,13 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
                 setShowUserModal(true);
                 setSelectedUser(activeUser);
               }}
-              className="flex items-center gap-2 px-2 py-1 rounded-full hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 sm:gap-2 px-1 sm:px-2 py-1 rounded-full hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
               title={`Active: ${activeUser.name} (@${activeUser.username})`}
             >
-              <div className="w-8 h-8 rounded-full bg-[#5b46b5] text-white flex items-center justify-center text-xs font-bold">
-                <User className="w-4 h-4" />
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#5b46b5] text-white flex items-center justify-center text-xs font-bold">
+                <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
-              <span className="hidden xl:inline text-xs font-semibold text-slate-700 max-w-[90px] truncate">
+              <span className="hidden sm:inline text-xs font-semibold text-slate-700 max-w-[90px] truncate">
                 {activeUser.name.split(' ')[0]}
               </span>
             </button>
@@ -588,7 +583,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
             {/* POS Bag Trigger */}
             <button
               onClick={() => setActiveTab('pos')}
-              className="relative w-9 h-9 rounded-full hover:bg-pink-50 text-slate-700 hover:text-[#ec1f73] flex items-center justify-center transition-colors cursor-pointer"
+              className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full hover:bg-pink-50 text-slate-700 hover:text-[#ec1f73] flex items-center justify-center transition-colors cursor-pointer"
               title="Open POS Terminal"
             >
               <ShoppingCart className="w-4 h-4" />
@@ -602,28 +597,28 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
         </div>
       </div>
 
-      {/* 3. Secondary Category & Hot-Pink Action Strip (Matching reference) */}
-      <div className="hidden md:block bg-white border-b border-slate-100 px-4 sm:px-6 lg:px-8 py-2">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-5 overflow-x-auto text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+      {/* 3. Secondary Category & Hot-Pink Action Strip (Visible on all screens) */}
+      <div className="bg-white border-b border-slate-100 px-3 sm:px-6 lg:px-8 py-2">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-4 sm:gap-5 overflow-x-auto text-[11px] font-semibold text-slate-500 whitespace-nowrap scrollbar-none">
             {categories.slice(0, 7).map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveTab('pos')}
-                className="hover:text-[#ec1f73] transition-colors uppercase tracking-wider cursor-pointer"
+                className="hover:text-[#ec1f73] transition-colors uppercase tracking-wider cursor-pointer shrink-0"
               >
                 {cat.name.split(' (')[0]}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-[11px] font-mono text-slate-400">{timeStr}</span>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <span className="hidden sm:inline text-[11px] font-mono text-slate-400">{timeStr}</span>
             <button
               onClick={() => setActiveTab(activeTab === 'pos' ? 'cash' : 'pos')}
-              className="px-4 py-1.5 rounded-lg bg-[#ec1f73] hover:bg-[#d61665] text-white text-[11px] font-bold tracking-wide shadow-xs transition-colors whitespace-nowrap cursor-pointer"
+              className="px-3 sm:px-4 py-1.5 rounded-lg bg-[#ec1f73] hover:bg-[#d61665] text-white text-[10px] sm:text-[11px] font-bold tracking-wide shadow-xs transition-colors whitespace-nowrap cursor-pointer"
             >
-              {activeTab === 'pos' ? 'CASH DRAWER SHIFT' : 'OPEN POS TERMINAL'}
+              {activeTab === 'pos' ? 'CASH DRAWER' : 'OPEN POS'}
             </button>
           </div>
         </div>
@@ -632,7 +627,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
       {/* User Switch Modal */}
       {showUserModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-800 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full max-h-[92vh] overflow-y-auto shadow-2xl text-slate-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <UserCheck className="w-5 h-5 text-[#ec1f73]" />
@@ -733,7 +728,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
       {/* Shop Logo Upload Modal */}
       {showLogoModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-800 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full max-h-[92vh] overflow-y-auto shadow-2xl text-slate-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-[#ec1f73] text-white flex items-center justify-center shadow-sm">
@@ -812,7 +807,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
       {/* Mandatory/Quick Change Default Admin PIN Modal */}
       {showChangePinModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-800 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full max-h-[92vh] overflow-y-auto shadow-2xl text-slate-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">

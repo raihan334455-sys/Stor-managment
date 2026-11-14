@@ -346,7 +346,7 @@ export const ModernDashboard: React.FC = () => {
             </h2>
 
             {/* Segmented Filter Tabs */}
-            <div className="inline-flex items-center gap-2">
+            <div className="inline-flex flex-wrap justify-center items-center gap-2">
               {[
                 { id: 'best_seller', label: 'Best Seller' },
                 { id: 'low_stock', label: `Low Stock (${lowStockVariants.length})` },

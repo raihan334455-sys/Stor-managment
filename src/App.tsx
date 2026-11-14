@@ -243,7 +243,7 @@ const SalesHistoryView: React.FC = () => {
   );
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
@@ -266,6 +266,7 @@ const SalesHistoryView: React.FC = () => {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead>
             <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">
@@ -338,6 +339,7 @@ const SalesHistoryView: React.FC = () => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {voidTarget && (
@@ -450,7 +452,7 @@ const SettingsView: React.FC = () => {
   };
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-4xl">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-4xl">
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
           <Settings className="w-6 h-6 text-blue-600" />
@@ -900,7 +902,7 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-[#fafafc] flex flex-col font-sans text-slate-800">
       <Header onToggleMobileMenu={() => setIsMobileOpen(true)} />
       <SidebarNav isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
-      <main className="flex-1 w-full bg-[#fafafc]">
+      <main className="flex-1 w-full min-w-0 bg-[#fafafc]">
         {renderTabContent()}
       </main>
 

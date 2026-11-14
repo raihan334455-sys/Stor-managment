@@ -185,7 +185,7 @@ export const CashDrawerManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -223,7 +223,7 @@ export const CashDrawerManagement: React.FC = () => {
 
       {/* Active Shift Dashboard */}
       {activeSession ? (
-        <div className="bg-white border-2 border-emerald-500/30 rounded-2xl p-6 shadow-sm space-y-5">
+        <div className="bg-white border-2 border-emerald-500/30 rounded-2xl p-4 sm:p-6 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
             <div className="flex items-center gap-3">
               <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -425,7 +425,7 @@ export const CashDrawerManagement: React.FC = () => {
       {/* Open Shift Modal */}
       {showOpenModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
@@ -535,7 +535,7 @@ export const CashDrawerManagement: React.FC = () => {
       {/* Edit Active Drawer Float Modal */}
       {showEditFloatModal && activeSession && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
@@ -643,7 +643,7 @@ export const CashDrawerManagement: React.FC = () => {
       {/* Close Shift Modal */}
       {showCloseModal && activeSession && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-800">Close Shift & Reconcile Drawer</h3>
               <button onClick={() => setShowCloseModal(false)} className="text-slate-400 hover:text-slate-700">

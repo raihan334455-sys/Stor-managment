@@ -112,8 +112,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ isMobileOpen = false, se
                 <ShoppingBag className="w-4 h-4" />
               )}
             </div>
-            <div>
-              <div className="font-bold text-sm truncate max-w-[150px]">{store.store_name}</div>
+            <div className="min-w-0">
+              <div className="font-bold text-sm leading-tight break-words">{store.store_name}</div>
               <div className="text-[10px] text-white/80 capitalize">
                 {activeUser.name} ({activeUser.role})
               </div>

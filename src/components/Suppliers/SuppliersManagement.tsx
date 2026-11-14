@@ -130,7 +130,7 @@ export const SuppliersManagement: React.FC = () => {
   const totalPurchased = suppliers.reduce((sum, s) => sum + s.total_purchases, 0);
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -198,7 +198,7 @@ export const SuppliersManagement: React.FC = () => {
       {/* Table Section */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex flex-1 items-center gap-3">
+          <div className="flex flex-1 flex-wrap items-center gap-3">
             <div className="relative max-w-sm w-full">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
@@ -335,7 +335,7 @@ export const SuppliersManagement: React.FC = () => {
       {/* Add / Edit Supplier Modal */}
       {showAddEditModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-800">
                 {editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}
@@ -374,7 +374,7 @@ export const SuppliersManagement: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile / Phone *</label>
                   <input
@@ -432,7 +432,7 @@ export const SuppliersManagement: React.FC = () => {
       {/* Pay Supplier Due Modal */}
       {showPayDueModal && payingSupplier && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-800">Pay Supplier Due</h3>
@@ -537,7 +537,7 @@ export const SuppliersManagement: React.FC = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl text-xs">
               <div>
                 <span className="text-slate-400 block">Total Purchases</span>
                 <span className="font-bold font-mono text-slate-800">
@@ -561,7 +561,7 @@ export const SuppliersManagement: React.FC = () => {
               </div>
             </div>
 
-            <div className="overflow-y-auto flex-1 border border-slate-200 rounded-xl">
+            <div className="overflow-auto flex-1 border border-slate-200 rounded-xl">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">

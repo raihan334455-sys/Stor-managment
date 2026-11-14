@@ -181,7 +181,7 @@ export const LoginScreen: React.FC = () => {
                   {store.store_name?.charAt(0) || 'R'}
                 </div>
               )}
-              <span className="text-xs font-semibold text-slate-500 tracking-tight truncate max-w-[220px]">
+              <span className="text-xs font-semibold text-slate-500 tracking-tight text-center">
                 {store.store_name}
               </span>
             </div>
@@ -448,14 +448,14 @@ export const LoginScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Companion Store Overview & Touch Keypad (Desktop only, mirrors right screen of reference) */}
-        <div className="hidden lg:block lg:col-span-6 w-full max-w-[440px] mx-auto">
-          <div className="bg-white rounded-[32px] p-8 shadow-[0_24px_60px_-15px_rgba(32,28,86,0.08)] border border-slate-100/90 space-y-6">
+        {/* RIGHT COLUMN: Companion Store Overview & Touch Keypad */}
+        <div className="lg:col-span-6 w-full max-w-[440px] mx-auto">
+          <div className="bg-white rounded-[32px] p-6 sm:p-8 shadow-[0_24px_60px_-15px_rgba(32,28,86,0.08)] border border-slate-100/90 space-y-6">
             {/* Greeting Header matching right phone card in reference */}
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm text-slate-400 font-medium">Howdy,</p>
-                <h2 className="text-2xl font-extrabold text-[#201c56] tracking-tight truncate max-w-[260px]">
+                <h2 className="text-xl sm:text-2xl font-extrabold text-[#201c56] tracking-tight leading-snug break-words">
                   {store.store_name}
                 </h2>
               </div>

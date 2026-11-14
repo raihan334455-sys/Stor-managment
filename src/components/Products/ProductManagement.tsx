@@ -374,7 +374,7 @@ export const ProductManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Page Title & Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -389,7 +389,7 @@ export const ProductManagement: React.FC = () => {
 
         <button
           onClick={openAddModal}
-          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all shrink-0"
+          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all shrink-0 self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           <span>Add New Product & Variants</span>
@@ -397,7 +397,7 @@ export const ProductManagement: React.FC = () => {
       </div>
 
       {/* Filter & Search Controls */}
-      <div className="flex flex-col sm:flex-row items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -412,7 +412,7 @@ export const ProductManagement: React.FC = () => {
         <select
           value={selectedCat}
           onChange={(e) => setSelectedCat(e.target.value)}
-          className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-700 focus:outline-none focus:border-blue-500 shrink-0 shadow-sm"
+          className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-700 focus:outline-none focus:border-blue-500 shrink-0 shadow-sm w-full sm:w-auto"
         >
           <option value="all">All Categories</option>
           {categories.map((c) => (
@@ -433,11 +433,11 @@ export const ProductManagement: React.FC = () => {
             return (
               <div key={p.id} className="transition-colors hover:bg-slate-50/80">
                 {/* Product Master Header Row */}
-                <div className="p-4 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
+                <div className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
                     <button
                       onClick={() => setExpandedProductId(isExpanded ? null : p.id)}
-                      className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
+                      className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 shrink-0"
                     >
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
@@ -457,8 +457,8 @@ export const ProductManagement: React.FC = () => {
                       </div>
                     )}
 
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <h3 className="font-bold text-sm text-slate-800">{p.name}</h3>
                         <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
                           {p.code}
@@ -467,13 +467,13 @@ export const ProductManagement: React.FC = () => {
                           {categoryName}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-slate-500 mt-0.5">
                         {p.variants.length} Variant(s) Available
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 pl-8 sm:pl-0">
                     <button
                       onClick={() => openAddSimilarModal(p)}
                       title="Add Similar Product (Clone template with new barcode/SKU)"
@@ -609,7 +609,7 @@ export const ProductManagement: React.FC = () => {
             )}
 
             <form onSubmit={handleSaveProduct} className="space-y-4 my-4 overflow-y-auto flex-1 pr-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Product Name *</label>
                   <input
@@ -768,7 +768,7 @@ export const ProductManagement: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-600">Variant Name</label>
                           <input
@@ -822,7 +822,7 @@ export const ProductManagement: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-600">Purchase Price</label>
                           <input

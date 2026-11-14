@@ -151,7 +151,7 @@ export const CustomerManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Top Banner Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-4 bg-white border border-slate-200 rounded-2xl flex items-center justify-between shadow-sm">
@@ -306,7 +306,7 @@ export const CustomerManagement: React.FC = () => {
         </div>
 
         {/* Right Customer Due Ledger & History View */}
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between space-y-6 shadow-sm">
+        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col justify-between space-y-6 shadow-sm">
           {activeCustomer ? (
             <>
               {/* Customer Header Info */}
@@ -461,6 +461,7 @@ export const CustomerManagement: React.FC = () => {
                 </h4>
 
                 <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 text-slate-500 text-[10px] bg-slate-50 font-semibold">
@@ -510,6 +511,7 @@ export const CustomerManagement: React.FC = () => {
                       )}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </div>
             </>
@@ -522,7 +524,7 @@ export const CustomerManagement: React.FC = () => {
       {/* PAY DUE MODAL */}
       {showPayDueModal && payCustObj && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full text-slate-800 shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full text-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <DollarSign className="w-5 h-5 text-emerald-600" />
@@ -605,7 +607,7 @@ export const CustomerManagement: React.FC = () => {
       {/* ADD CUSTOMER MODAL */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full text-slate-800 shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full text-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-800">Register Customer</h3>
               <button

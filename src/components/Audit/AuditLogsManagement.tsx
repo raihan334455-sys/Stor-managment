@@ -101,7 +101,7 @@ export const AuditLogsManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -127,7 +127,7 @@ export const AuditLogsManagement: React.FC = () => {
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
         {/* Search & Filters */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex flex-1 items-center gap-3">
+          <div className="flex flex-1 flex-wrap items-center gap-3">
             <div className="relative max-w-sm w-full">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input

@@ -246,7 +246,7 @@ export const QuotationsManagement: React.FC = () => {
   });
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -514,6 +514,7 @@ export const QuotationsManagement: React.FC = () => {
 
               {/* Items Table */}
               <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="bg-slate-100 text-slate-600 border-b border-slate-200 font-semibold">
@@ -561,6 +562,7 @@ export const QuotationsManagement: React.FC = () => {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
@@ -595,7 +597,7 @@ export const QuotationsManagement: React.FC = () => {
       {/* Print Proforma View */}
       {selectedQuotationForPrint && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:fixed print:inset-0">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-slate-800 printable-area print:shadow-none print:border-none print:m-0">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-slate-800 max-h-[92vh] overflow-y-auto printable-area print:max-h-none print:overflow-visible print:shadow-none print:border-none print:m-0">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900">Official Price Quotation</h3>
@@ -633,6 +635,7 @@ export const QuotationsManagement: React.FC = () => {
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden print:rounded-none">
+              <div className="overflow-x-auto print:overflow-visible">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
@@ -655,6 +658,7 @@ export const QuotationsManagement: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
 
             <div className="flex justify-between items-center text-sm font-bold border-t border-slate-100 pt-3">

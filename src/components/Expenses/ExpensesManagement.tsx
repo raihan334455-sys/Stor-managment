@@ -128,7 +128,7 @@ export const ExpensesManagement: React.FC = () => {
   });
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -199,7 +199,7 @@ export const ExpensesManagement: React.FC = () => {
       </div>
 
       {/* Sub-tabs: Daily Log vs Recurring Bills */}
-      <div className="flex border-b border-slate-200 gap-6 text-xs font-bold">
+      <div className="flex border-b border-slate-200 gap-6 text-xs font-bold overflow-x-auto whitespace-nowrap">
         <button
           onClick={() => setActiveSubTab('daily')}
           className={`pb-2.5 transition-colors border-b-2 flex items-center gap-1.5 ${
@@ -228,7 +228,7 @@ export const ExpensesManagement: React.FC = () => {
         /* Daily Expenses Table */
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex flex-1 items-center gap-3">
+            <div className="flex flex-1 flex-wrap items-center gap-3">
               <div className="relative max-w-sm w-full">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -363,7 +363,7 @@ export const ExpensesManagement: React.FC = () => {
       {/* Add Expense Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <Banknote className="w-5 h-5 text-blue-600" />
@@ -390,7 +390,7 @@ export const ExpensesManagement: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Amount ({store.currency_symbol}) *
@@ -432,7 +432,7 @@ export const ExpensesManagement: React.FC = () => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Method</label>
                   <select

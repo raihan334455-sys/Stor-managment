@@ -333,7 +333,7 @@ export const GoogleDriveManagement: React.FC = () => {
   const usagePercent = limitBytes > 0 ? Math.min(100, Math.round((usageBytes / limitBytes) * 100)) : 0;
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-7xl mx-auto">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -594,7 +594,7 @@ export const GoogleDriveManagement: React.FC = () => {
               </div>
 
               {/* Search Filter */}
-              <div className="relative min-w-[240px]">
+              <div className="relative w-full sm:w-auto sm:min-w-[240px]">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
@@ -757,7 +757,7 @@ export const GoogleDriveManagement: React.FC = () => {
       {/* New Folder Modal */}
       {showNewFolderModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-sm w-full max-h-[92vh] overflow-y-auto shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center gap-2 text-blue-600 font-bold text-base">
               <FolderPlus className="w-5 h-5" />
               <span>Create New Folder in Drive</span>
@@ -800,7 +800,7 @@ export const GoogleDriveManagement: React.FC = () => {
       {/* Mandatory User Confirmation Modal for DELETING files */}
       {fileToDelete && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full max-h-[92vh] overflow-y-auto shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <span>Delete from Google Drive?</span>
@@ -842,7 +842,7 @@ export const GoogleDriveManagement: React.FC = () => {
       {/* Mandatory User Confirmation Modal for RESTORING database from Drive */}
       {fileToRestore && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full max-h-[92vh] overflow-y-auto shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center gap-2 text-amber-600 font-bold text-base">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <span>Restore POS Database from Drive?</span>
