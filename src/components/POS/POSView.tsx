@@ -438,7 +438,7 @@ export const POSView: React.FC = () => {
   const handleOpenPayment = () => {
     if (cartItems.length === 0) return;
     setPendingDueCheckout(false);
-    setPaidAmountInput(grandTotal.toString());
+    setPaidAmountInput('0');
     setShowPaymentModal(true);
   };
 
@@ -1337,13 +1337,23 @@ export const POSView: React.FC = () => {
             <form onSubmit={handleFinalCheckout} className="space-y-4 mt-4">
               {/* Summary Cards */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="text-[10px] text-slate-500 uppercase font-bold">Grand Total</div>
-                  <div className="text-xl font-bold font-mono text-blue-700">
+                <button
+                  type="button"
+                  onClick={() => setPaidAmountInput(grandTotal.toString())}
+                  title="Grand Total এ ক্লিক করলে Amount Received এ টাকা যোগ হবে"
+                  className="p-3 bg-blue-50/70 hover:bg-blue-100/80 active:scale-[0.99] rounded-xl border border-blue-200 hover:border-blue-400 text-left transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] text-blue-700 uppercase font-bold">Grand Total</span>
+                    <span className="text-[9px] font-semibold text-blue-600 bg-white px-1.5 py-0.5 rounded border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      Tap to Fill
+                    </span>
+                  </div>
+                  <div className="text-xl font-bold font-mono text-blue-700 mt-0.5">
                     {store.currency_symbol}
                     {grandTotal}
                   </div>
-                </div>
+                </button>
 
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                   <div className="text-[10px] text-slate-500 uppercase font-bold">Customer</div>
@@ -1390,22 +1400,35 @@ export const POSView: React.FC = () => {
               {/* Paid Amount Input & Due Calculation */}
               <div className="space-y-3 pt-2">
                 <div>
-                  <div className="flex justify-between text-xs text-slate-700 mb-1 font-medium">
+                  <div className="flex justify-between items-center text-xs text-slate-700 mb-1 font-medium">
                     <span>Amount Received:</span>
-                    <button
-                      type="button"
-                      onClick={() => setPaidAmountInput(grandTotal.toString())}
-                      className="text-blue-600 underline hover:text-blue-800 text-[11px]"
-                    >
-                      Exact Total ({store.currency_symbol}
-                      {grandTotal})
-                    </button>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setPaidAmountInput('0')}
+                        className="text-slate-500 hover:text-slate-800 underline text-[11px] cursor-pointer"
+                      >
+                        Clear (0)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaidAmountInput(grandTotal.toString())}
+                        className="text-blue-600 underline hover:text-blue-800 text-[11px] font-semibold cursor-pointer"
+                      >
+                        Exact Total ({store.currency_symbol}
+                        {grandTotal})
+                      </button>
+                    </div>
                   </div>
                   <input
                     type="number"
+                    min="0"
                     step="0.01"
                     required
                     value={paidAmountInput}
+                    onFocus={(e) => {
+                      if (paidAmountInput === '0') e.target.select();
+                    }}
                     onChange={(e) => setPaidAmountInput(e.target.value)}
                     className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-center text-2xl font-mono text-blue-600 focus:outline-none focus:border-blue-500"
                   />
