@@ -24,9 +24,17 @@ import {
   Cloud,
   X,
   ShoppingBag,
+  Pill,
+  Landmark,
+  Briefcase,
 } from 'lucide-react';
 
 import { canAccessTab } from '../utils/security';
+import {
+  isGeneralProductModuleEnabled,
+  isMedicineModuleEnabled,
+  isProductEnabled,
+} from '../utils/modules';
 
 interface SidebarNavProps {
   isMobileOpen?: boolean;
@@ -46,7 +54,11 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ isMobileOpen = false, se
     store,
   } = useApp();
 
+  const medEnabled = isMedicineModuleEnabled(store);
+  const genEnabled = isGeneralProductModuleEnabled(store);
+
   const lowStockCount = products
+    .filter((p) => !p.archived && isProductEnabled(p, store))
     .flatMap((p) => p.variants)
     .filter((v) => v.stock_quantity <= v.min_stock_level).length;
   const dueCustomersCount = customers.filter((c) => c.total_due_amount > 0).length;
@@ -59,7 +71,11 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ isMobileOpen = false, se
       icon: ShoppingCart,
       badge: heldCarts.length > 0 ? `${heldCarts.length}` : null,
     },
-    { id: 'products', label: 'Products & Catalog', icon: Package },
+    ...(medEnabled || genEnabled
+      ? [{ id: 'products', label: 'Products & Catalog', icon: Package }]
+      : []),
+    ...(medEnabled ? [{ id: 'medicine', label: 'Medicine Management', icon: Pill }] : []),
+    ...(genEnabled ? [{ id: 'general_products', label: 'General Product Mgmt', icon: Package }] : []),
     {
       id: 'inventory',
       label: 'Stock & Inventory',
@@ -67,18 +83,21 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ isMobileOpen = false, se
       badge: lowStockCount > 0 ? `${lowStockCount}` : null,
     },
     { id: 'cash', label: 'Cash Drawer & Shift', icon: Wallet },
+    { id: 'accounts', label: 'Accounts Management', icon: Landmark },
     {
       id: 'customers',
       label: 'Customers & Dues',
       icon: Users,
       badge: dueCustomersCount > 0 ? `${dueCustomersCount}` : null,
     },
+    { id: 'receipts', label: 'All Payment Receipts', icon: ReceiptText },
     { id: 'sales', label: 'Sales & Invoices', icon: ReceiptText },
     { id: 'purchases', label: 'Purchases', icon: Truck },
     { id: 'suppliers', label: 'Suppliers', icon: UserCheck },
     { id: 'customer_due', label: 'Customer Due Ledger', icon: CreditCard },
     { id: 'returns', label: 'Returns & Exchange', icon: RotateCcw },
     { id: 'expenses', label: 'Shop Expenses', icon: Banknote },
+    { id: 'employees', label: 'Employee Management', icon: Briefcase },
     { id: 'quotations', label: 'Quotations', icon: FileText },
     { id: 'reports', label: 'Reports & P/L', icon: BarChart3 },
     { id: 'users', label: 'Salesman & Users', icon: ShieldAlert },

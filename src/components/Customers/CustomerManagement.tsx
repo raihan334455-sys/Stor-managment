@@ -20,9 +20,15 @@ import {
   MessageSquare,
   Calendar,
   Mail,
+  Download,
+  Package,
+  Share2,
 } from 'lucide-react';
 import { Customer, PaymentMethodType } from '../../types';
 import { DueAlertModal } from './DueAlertModal';
+import { downloadReceiptAsPng, UnifiedReceiptPayload } from '../../utils/receiptDownload';
+import { ReceiptShareModal } from '../Receipts/ReceiptShareModal';
+import { getMobilePurchaseStats } from '../../utils/customerPurchaseStats';
 import {
   buildDueReminderMessage,
   buildSmsUrl,
@@ -33,12 +39,25 @@ import {
 } from '../../utils/dueAlerts';
 
 export const CustomerManagement: React.FC = () => {
-  const { activeTab, customers, customerDues, sales, store, payCustomerDue, saveCustomer, logDueAlert } = useApp();
+  const {
+    activeTab,
+    customers,
+    customerDues,
+    suppliers,
+    supplierDues,
+    sales,
+    store,
+    payCustomerDue,
+    saveCustomer,
+    logDueAlert,
+    setPrintableReceipt,
+  } = useApp();
   const [search, setSearch] = useState<string>('');
   const [dueFilterMode, setDueFilterMode] = useState<'all' | 'due' | 'overdue' | 'unalerted'>(
     activeTab === 'customer_due' ? 'due' : 'all'
   );
   const [alertCustomer, setAlertCustomer] = useState<Customer | null>(null);
+  const [shareReceipt, setShareReceipt] = useState<UnifiedReceiptPayload | null>(null);
 
   React.useEffect(() => {
     if (activeTab === 'customer_due') {
@@ -93,6 +112,9 @@ export const CustomerManagement: React.FC = () => {
   const totalAllCustomerDue = customers.reduce((acc, c) => acc + c.total_due_amount, 0);
 
   const activeCustomer = customers.find((c) => c.id === selectedCustomerId) || filteredCustomers[0];
+  const activeMobileStats = activeCustomer
+    ? getMobilePurchaseStats(activeCustomer.mobile, sales, activeCustomer.id)
+    : null;
 
   // Get customer specific due transactions & sales history
   const activeCustomerDues = activeCustomer
@@ -254,6 +276,7 @@ export const CustomerManagement: React.FC = () => {
               const isSelected = activeCustomer?.id === c.id;
               const overdueCheck = isCustomerDueOverdue(c, alertDaysThreshold);
               const alerted = wasAlertedToday(c);
+              const cStats = getMobilePurchaseStats(c.mobile, sales, c.id);
               return (
                 <div
                   key={c.id}
@@ -272,8 +295,11 @@ export const CustomerManagement: React.FC = () => {
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] pt-1 gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500">Orders: {c.total_orders}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-slate-500">Orders: {cStats.totalOrders || c.total_orders}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-violet-50 text-[#5b46b5] border border-violet-200 text-[10px] font-bold">
+                        কেনা পণ্য: {cStats.totalProductQuantity} টি
+                      </span>
                       {overdueCheck.overdue && (
                         <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-bold">
                           OVERDUE
@@ -427,7 +453,7 @@ export const CustomerManagement: React.FC = () => {
               </div>
 
               {/* Customer Stats Summary */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                   <div className="text-[10px] text-slate-500 uppercase font-bold">Total Purchases</div>
                   <div className="text-sm font-bold text-slate-800 font-mono mt-0.5">
@@ -451,6 +477,16 @@ export const CustomerManagement: React.FC = () => {
                     {activeCustomer.total_due_amount}
                   </div>
                 </div>
+
+                <div className="p-3 bg-violet-50 rounded-xl border border-violet-200">
+                  <div className="text-[10px] text-[#5b46b5] uppercase font-bold">কেনা পণ্য (Products)</div>
+                  <div className="text-sm font-bold text-[#5b46b5] font-mono mt-0.5">
+                    {activeMobileStats?.totalProductQuantity || 0} টি
+                  </div>
+                  <div className="text-[10px] text-violet-700">
+                    {activeMobileStats?.uniqueProductsCount || 0} রকমের • {activeMobileStats?.totalOrders || 0} অর্ডার
+                  </div>
+                </div>
               </div>
 
               {/* Due Ledger Transactions History */}
@@ -470,47 +506,188 @@ export const CustomerManagement: React.FC = () => {
                         <th className="p-2.5">DESCRIPTION</th>
                         <th className="p-2.5 text-right">PAID</th>
                         <th className="p-2.5 text-right">BALANCE</th>
+                        <th className="p-2.5 text-right">RECEIPT</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-mono">
-                      {activeCustomerDues.map((dt) => (
-                        <tr key={dt.id} className="hover:bg-slate-50">
-                          <td className="p-2.5 text-slate-500 text-[10px]">
-                            {dt.date} {dt.time}
-                          </td>
-                          <td className="p-2.5">
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
-                                dt.type === 'due_added'
-                                  ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              }`}
-                            >
-                              {dt.type === 'due_added' ? 'Credit Sale' : 'Payment Received'}
-                            </span>
-                          </td>
-                          <td className="p-2.5 font-sans text-slate-700 text-[11px]">
-                            {dt.description}
-                          </td>
-                          <td className="p-2.5 text-right font-bold text-emerald-700">
-                            {store.currency_symbol}
-                            {dt.paid_amount}
-                          </td>
-                          <td className="p-2.5 text-right font-bold text-slate-800">
-                            {store.currency_symbol}
-                            {dt.balance_after}
-                          </td>
-                        </tr>
-                      ))}
+                      {activeCustomerDues.map((dt) => {
+                        const isAccountCleared =
+                          dt.type === 'due_payment' &&
+                          (dt.balance_after <= 0.01 || (activeCustomer.total_due_amount || 0) <= 0.01);
+                        const linkedSale =
+                          dt.type === 'due_added' && dt.invoice_number
+                            ? sales.find((s) => s.invoice_number === dt.invoice_number)
+                            : undefined;
+                        return (
+                          <tr key={dt.id} className="hover:bg-slate-50">
+                            <td className="p-2.5 text-slate-500 text-[10px]">
+                              {dt.date} {dt.time}
+                            </td>
+                            <td className="p-2.5">
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
+                                  dt.type === 'due_added'
+                                    ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                    : isAccountCleared
+                                    ? 'bg-emerald-600 text-white border border-emerald-600'
+                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                }`}
+                              >
+                                {dt.type === 'due_added'
+                                  ? 'Credit Sale'
+                                  : isAccountCleared
+                                  ? 'Due Cleared'
+                                  : 'Payment Received'}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-sans text-slate-700 text-[11px]">
+                              {dt.description}
+                            </td>
+                            <td className="p-2.5 text-right font-bold text-emerald-700">
+                              {store.currency_symbol}
+                              {dt.paid_amount}
+                            </td>
+                            <td className="p-2.5 text-right font-bold text-slate-800">
+                              {store.currency_symbol}
+                              {dt.balance_after}
+                            </td>
+                            <td className="p-2.5 text-right">
+                              {dt.type === 'due_payment' ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShareReceipt({ type: 'due', data: dt })}
+                                    title="Share Receipt via SMS / WhatsApp / Other Apps"
+                                    className="p-1 rounded bg-[#ec1f73] hover:bg-[#d61665] text-white inline-flex items-center cursor-pointer"
+                                  >
+                                    <Share2 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      downloadReceiptAsPng(
+                                        { type: 'due', data: dt },
+                                        { store, customers, customerDues, suppliers, supplierDues, sales }
+                                      )
+                                    }
+                                    title="Download Receipt PNG"
+                                    className="p-1 rounded bg-[#5b46b5] hover:bg-[#4a379c] text-white inline-flex items-center cursor-pointer"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPrintableReceipt({ type: 'due', data: dt })}
+                                    className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-[10px] font-sans font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Printer className="w-3 h-3 text-emerald-600" />
+                                    <span>Receipt</span>
+                                  </button>
+                                </div>
+                              ) : linkedSale ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShareReceipt({ type: 'sale', data: linkedSale })}
+                                    title="Share Receipt via SMS / WhatsApp / Other Apps"
+                                    className="p-1 rounded bg-[#ec1f73] hover:bg-[#d61665] text-white inline-flex items-center cursor-pointer"
+                                  >
+                                    <Share2 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      downloadReceiptAsPng(
+                                        { type: 'sale', data: linkedSale },
+                                        { store, customers, customerDues, suppliers, supplierDues, sales }
+                                      )
+                                    }
+                                    title="Download Receipt PNG"
+                                    className="p-1 rounded bg-[#5b46b5] hover:bg-[#4a379c] text-white inline-flex items-center cursor-pointer"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPrintableReceipt({ type: 'sale', data: linkedSale })}
+                                    className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-[10px] font-sans font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Printer className="w-3 h-3 text-blue-600" />
+                                    <span>Receipt</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-300">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {activeCustomerDues.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="p-6 text-center text-slate-400 text-xs font-sans">
+                          <td colSpan={6} className="p-6 text-center text-slate-400 text-xs font-sans">
                             No due ledger records found for this customer
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Products Purchased By Same Phone/Mobile Number */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-[#5b46b5]" />
+                    <span>এই নম্বরে কেনা সকল পণ্য ({activeCustomer.mobile})</span>
+                  </h4>
+                  <span className="text-[11px] font-bold text-[#5b46b5] bg-violet-50 border border-violet-200 px-2.5 py-0.5 rounded-full">
+                    মোট: {activeMobileStats?.totalProductQuantity || 0} টি পণ্য ({activeMobileStats?.totalOrders || 0} অর্ডার)
+                  </span>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 text-[10px] bg-slate-50 font-semibold">
+                          <th className="p-2.5">PRODUCT & VARIANT</th>
+                          <th className="p-2.5 text-center">ORDERS</th>
+                          <th className="p-2.5 text-right">TOTAL QTY</th>
+                          <th className="p-2.5 text-right">TOTAL SPENT</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {activeMobileStats && activeMobileStats.breakdown.length > 0 ? (
+                          activeMobileStats.breakdown.map((item) => (
+                            <tr key={item.key} className="hover:bg-slate-50">
+                              <td className="p-2.5">
+                                <div className="font-semibold text-slate-800">{item.product_name}</div>
+                                <div className="text-[10px] text-slate-500">{item.variant_name}</div>
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-slate-600">
+                                {item.order_count}x
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-[#5b46b5]">
+                                {item.total_qty} {item.unit}
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-slate-800">
+                                {store.currency_symbol}
+                                {item.total_spent.toLocaleString()}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-slate-400 text-xs">
+                              এই মোবাইল নম্বরে এখনও কোনো পণ্য কেনার রেকর্ড নেই।
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -701,6 +878,14 @@ export const CustomerManagement: React.FC = () => {
         <DueAlertModal
           customer={alertCustomer}
           onClose={() => setAlertCustomer(null)}
+        />
+      )}
+
+      {/* SHARE RECEIPT MODAL */}
+      {shareReceipt && (
+        <ReceiptShareModal
+          receipt={shareReceipt}
+          onClose={() => setShareReceipt(null)}
         />
       )}
     </div>

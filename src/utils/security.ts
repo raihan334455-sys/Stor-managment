@@ -681,15 +681,20 @@ export const TAB_REQUIRED_PERMISSIONS: Record<string, PermissionKey | 'ADMIN_ONL
   dashboard: 'pos_sale',
   pos: 'pos_sale',
   products: 'pos_sale', // readable catalog for terminal checkout; edits require product_manage
+  medicine: 'product_manage',
+  general_products: 'product_manage',
   inventory: 'pos_sale',
   customers: 'customer_manage',
   customer_due: 'due_manage',
+  receipts: 'pos_sale',
   sales: 'pos_sale',
   returns: 'pos_sale',
   cash: 'pos_sale',
   purchases: 'supplier_manage',
   suppliers: 'supplier_manage',
   expenses: 'expense_manage',
+  accounts: 'expense_manage',
+  employees: 'user_manage',
   quotations: 'reports_view',
   reports: 'reports_view',
   users: 'user_manage',
@@ -704,7 +709,20 @@ export function canAccessTab(user: User | null | undefined, tabId: string): bool
 
   // Visitor account is explicitly blocked from sensitive administrative/financial tabs
   if (user.role === 'visitor') {
-    const visitorBlocked = ['quotations', 'reports', 'users', 'settings', 'backup', 'audit', 'drive', 'purchases', 'suppliers', 'expenses'];
+    const visitorBlocked = [
+      'quotations',
+      'reports',
+      'users',
+      'settings',
+      'backup',
+      'audit',
+      'drive',
+      'purchases',
+      'suppliers',
+      'expenses',
+      'accounts',
+      'employees',
+    ];
     if (visitorBlocked.includes(tabId)) return false;
   }
 

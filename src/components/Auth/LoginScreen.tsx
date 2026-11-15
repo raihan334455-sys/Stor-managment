@@ -25,8 +25,10 @@ export const LoginScreen: React.FC = () => {
     store.demo_mode_enabled !== false &&
     users.some((u) => (u.username === 'demo' || u.role === 'visitor') && u.active);
 
-  const savedId =
+  const savedIdRaw =
     typeof window !== 'undefined' ? window.localStorage.getItem(REMEMBER_KEY) : null;
+  const savedId =
+    !isDemoAvailable && savedIdRaw?.toLowerCase() === 'demo' ? null : savedIdRaw;
 
   const [username, setUsername] = useState<string>(savedId || (isDemoAvailable ? 'demo' : ''));
   const [pin, setPin] = useState<string>('');
@@ -228,7 +230,7 @@ export const LoginScreen: React.FC = () => {
                     setUsername(e.target.value);
                     setError('');
                   }}
-                  placeholder="demo or salesman id"
+                  placeholder={isDemoAvailable ? 'demo or salesman id' : 'owner or salesman id'}
                   className={`w-full h-13 px-4 rounded-xl border-[1.5px] bg-white text-sm text-slate-800 placeholder-slate-300 outline-none transition-all ${
                     focusedField === 'id'
                       ? 'border-[#6666f1] ring-4 ring-[#6666f1]/10'
@@ -527,7 +529,7 @@ export const LoginScreen: React.FC = () => {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-[#201c56]">Quick Touch PIN Pad</span>
                 <span className="font-mono text-slate-400">
-                  ID: <strong className="text-slate-700">{username.trim() || 'demo'}</strong>
+                  ID: <strong className="text-slate-700">{username.trim() || (isDemoAvailable ? 'demo' : 'admin')}</strong>
                 </span>
               </div>
 

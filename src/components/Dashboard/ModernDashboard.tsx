@@ -21,7 +21,22 @@ import {
   BellRing,
   MessageCircle,
   MessageSquare,
+  TrendingUp,
+  Calendar,
+  Download,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import { Customer } from '../../types';
 import { DueAlertModal } from '../Customers/DueAlertModal';
 import {
@@ -31,10 +46,21 @@ import {
   isCustomerDueOverdue,
   wasAlertedToday,
 } from '../../utils/dueAlerts';
+import {
+  buildSalesTrendSeries,
+  exportDateRangeReportCsv,
+  shiftIsoDate,
+} from '../../utils/salesAnalytics';
+import {
+  isGeneralProductModuleEnabled,
+  isMedicineModuleEnabled,
+  isProductEnabled,
+} from '../../utils/modules';
 
 export const ModernDashboard: React.FC = () => {
   const {
     sales,
+    expenses,
     products,
     customers,
     store,
@@ -49,6 +75,46 @@ export const ModernDashboard: React.FC = () => {
   const [alertTargetCustomer, setAlertTargetCustomer] = useState<Customer | null>(null);
 
   const todayStr = new Date().toISOString().slice(0, 10);
+  const [reportStartDate, setReportStartDate] = useState<string>(() => shiftIsoDate(todayStr, -6));
+  const [reportEndDate, setReportEndDate] = useState<string>(todayStr);
+  const [activePresetDays, setActivePresetDays] = useState<7 | 14 | 30 | 'custom'>(7);
+  const [showDateTable, setShowDateTable] = useState<boolean>(false);
+
+  const normalizedStart = reportStartDate <= reportEndDate ? reportStartDate : reportEndDate;
+  const normalizedEnd = reportStartDate <= reportEndDate ? reportEndDate : reportStartDate;
+
+  const trendSeries = useMemo(
+    () =>
+      buildSalesTrendSeries({
+        sales,
+        expenses,
+        startDate: normalizedStart,
+        endDate: normalizedEnd,
+      }),
+    [sales, expenses, normalizedStart, normalizedEnd]
+  );
+
+  const rangeTotals = useMemo(
+    () =>
+      trendSeries.reduce(
+        (acc, day) => ({
+          sales: acc.sales + day.sales,
+          paid: acc.paid + day.paid,
+          due: acc.due + day.due,
+          orders: acc.orders + day.orders,
+          expenses: acc.expenses + day.expenses,
+        }),
+        { sales: 0, paid: 0, due: 0, orders: 0, expenses: 0 }
+      ),
+    [trendSeries]
+  );
+
+  const applyPresetRange = (days: 7 | 14 | 30) => {
+    setActivePresetDays(days);
+    setReportEndDate(todayStr);
+    setReportStartDate(shiftIsoDate(todayStr, -(days - 1)));
+  };
+
   const todaySales = sales.filter((s) => s.date === todayStr && s.status === 'completed');
   const todayTotal = todaySales.reduce((sum, s) => sum + s.grand_total, 0);
 
@@ -79,21 +145,28 @@ export const ModernDashboard: React.FC = () => {
     ? activeSession.opening_cash + currentCashSales + currentDueCollected
     : 0;
 
+  const medEnabled = isMedicineModuleEnabled(store);
+  const genEnabled = isGeneralProductModuleEnabled(store);
+  const anyProductModuleEnabled = medEnabled || genEnabled;
+
+  const visibleProducts = useMemo(
+    () => products.filter((p) => !p.archived && isProductEnabled(p, store)),
+    [products, store]
+  );
+
   const allVariants = useMemo(
     () =>
-      products
-        .filter((p) => !p.archived)
-        .flatMap((p) =>
-          p.variants
-            .filter((v) => v.active)
-            .map((v) => ({
-              ...v,
-              product_name: p.name,
-              image: p.image,
-              category_id: p.category_id,
-            }))
-        ),
-    [products]
+      visibleProducts.flatMap((p) =>
+        p.variants
+          .filter((v) => v.active)
+          .map((v) => ({
+            ...v,
+            product_name: p.name,
+            image: p.image,
+            category_id: p.category_id,
+          }))
+      ),
+    [visibleProducts]
   );
 
   const lowStockVariants = allVariants.filter((v) => v.stock_quantity <= v.min_stock_level);
@@ -157,13 +230,19 @@ export const ModernDashboard: React.FC = () => {
     },
     {
       title: 'Catalog Items',
-      subtitle: `${allVariants.length} Variants`,
-      value: `${products.length} Products`,
-      cta: 'Manage Catalog',
+      subtitle: anyProductModuleEnabled ? `${allVariants.length} Variants` : 'Modules Closed',
+      value: anyProductModuleEnabled ? `${visibleProducts.length} Products` : 'Disabled',
+      cta: anyProductModuleEnabled ? 'Manage Catalog' : 'Settings',
       bg: 'bg-[#fce7f3]',
       iconBg: 'bg-white/80 text-[#db2777]',
       icon: Package,
-      tab: 'products',
+      tab: anyProductModuleEnabled
+        ? medEnabled && !genEnabled
+          ? 'medicine'
+          : !medEnabled && genEnabled
+          ? 'general_products'
+          : 'products'
+        : 'settings',
     },
   ];
 
@@ -221,12 +300,22 @@ export const ModernDashboard: React.FC = () => {
                 <span>Open POS Terminal</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
-              <button
-                onClick={() => setActiveTab('products')}
-                className="px-6 py-3 rounded-lg border border-slate-500/40 bg-white/50 hover:bg-white text-[#1e1b3a] text-xs font-bold transition-all cursor-pointer"
-              >
-                Explore Products
-              </button>
+              {anyProductModuleEnabled && (
+                <button
+                  onClick={() =>
+                    setActiveTab(
+                      medEnabled && !genEnabled
+                        ? 'medicine'
+                        : !medEnabled && genEnabled
+                        ? 'general_products'
+                        : 'products'
+                    )
+                  }
+                  className="px-6 py-3 rounded-lg border border-slate-500/40 bg-white/50 hover:bg-white text-[#1e1b3a] text-xs font-bold transition-all cursor-pointer"
+                >
+                  Explore Products
+                </button>
+              )}
             </div>
           </div>
 
@@ -336,6 +425,315 @@ export const ModernDashboard: React.FC = () => {
               </button>
             );
           })}
+        </section>
+
+        {/* 2B. 7-DAY SALES TREND LINE CHART & DATE-TO-DATE REPORT */}
+        <section className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-5">
+          {/* Header & Date-to-Date Filter Controls */}
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#fde6ee] text-[#ec1f73] flex items-center justify-center shrink-0">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base sm:text-lg font-extrabold text-[#1e1b3a] tracking-tight">
+                  {activePresetDays === 7
+                    ? '7-Day Sales Trend'
+                    : activePresetDays === 'custom'
+                    ? 'Date-to-Date Sales Trend'
+                    : `${activePresetDays}-Day Sales Trend`}
+                </h2>
+                <p className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                  <span className="font-mono">{normalizedStart}</span>
+                  <span>to</span>
+                  <span className="font-mono">{normalizedEnd}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{trendSeries.length} days</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Quick Day Presets */}
+              <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl text-[11px] font-bold">
+                {([7, 14, 30] as const).map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => applyPresetRange(days)}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                      activePresetDays === days
+                        ? 'bg-white text-[#5b46b5] shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {days} Days
+                  </button>
+                ))}
+              </div>
+
+              {/* Date-to-Date Pickers */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+                <Calendar className="w-3.5 h-3.5 text-[#5b46b5] shrink-0" />
+                <input
+                  type="date"
+                  aria-label="From date"
+                  value={reportStartDate}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    setReportStartDate(e.target.value);
+                    setActivePresetDays('custom');
+                  }}
+                  className="bg-transparent text-xs font-mono text-slate-700 focus:outline-none"
+                />
+                <span className="text-slate-400 text-xs">→</span>
+                <input
+                  type="date"
+                  aria-label="To date"
+                  value={reportEndDate}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    setReportEndDate(e.target.value);
+                    setActivePresetDays('custom');
+                  }}
+                  className="bg-transparent text-xs font-mono text-slate-700 focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  exportDateRangeReportCsv({
+                    points: trendSeries,
+                    storeName: store.store_name,
+                    startDate: normalizedStart,
+                    endDate: normalizedEnd,
+                    currencySymbol: store.currency_symbol,
+                  })
+                }
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 text-[#5b46b5]" />
+                <span>CSV Report</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('reports')}
+                className="px-3 py-2 rounded-xl bg-[#5b46b5] hover:bg-[#4a379c] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <span>Full Report</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Selected Date-to-Date Range Summary Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-xl bg-[#fafafc] border border-slate-200/70">
+              <div className="text-[11px] font-medium text-slate-500">Range Sales Revenue</div>
+              <div className="text-xl font-extrabold font-mono tabular-nums text-[#ec1f73] mt-0.5">
+                {store.currency_symbol}
+                {rangeTotals.sales.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                Avg {store.currency_symbol}
+                {trendSeries.length > 0
+                  ? Math.round(rangeTotals.sales / trendSeries.length).toLocaleString()
+                  : 0}
+                /day
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#fafafc] border border-slate-200/70">
+              <div className="text-[11px] font-medium text-slate-500">Paid Collected</div>
+              <div className="text-xl font-extrabold font-mono tabular-nums text-[#5b46b5] mt-0.5">
+                {store.currency_symbol}
+                {rangeTotals.paid.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                {rangeTotals.sales > 0
+                  ? `${((rangeTotals.paid / rangeTotals.sales) * 100).toFixed(0)}% collected`
+                  : '0% collected'}
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#fafafc] border border-slate-200/70">
+              <div className="text-[11px] font-medium text-slate-500">Credit / Due Added</div>
+              <div className="text-xl font-extrabold font-mono tabular-nums text-amber-600 mt-0.5">
+                {store.currency_symbol}
+                {rangeTotals.due.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">
+                Expenses: {store.currency_symbol}
+                {rangeTotals.expenses.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#fafafc] border border-slate-200/70">
+              <div className="text-[11px] font-medium text-slate-500">Completed Invoices</div>
+              <div className="text-xl font-extrabold font-mono tabular-nums text-[#1e1b3a] mt-0.5">
+                {rangeTotals.orders}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                Avg Bill: {store.currency_symbol}
+                {rangeTotals.orders > 0
+                  ? Math.round(rangeTotals.sales / rangeTotals.orders).toLocaleString()
+                  : 0}
+              </div>
+            </div>
+          </div>
+
+          {/* Recharts 7-Day / Date-to-Date Sales Trend Line Chart */}
+          <div className="w-full h-72 pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={trendSeries}
+                margin={{ top: 10, right: 16, left: 0, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  axisLine={{ stroke: '#cbd5e1' }}
+                  tickLine={false}
+                  minTickGap={18}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  tickFormatter={(val: number) =>
+                    `${store.currency_symbol}${val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val}`
+                  }
+                />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload || payload.length === 0) return null;
+                    const point = payload[0]?.payload as (typeof trendSeries)[number] | undefined;
+                    if (!point) return null;
+                    return (
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-lg p-3 text-xs space-y-1.5 min-w-[180px]">
+                        <div className="font-bold text-[#1e1b3a] border-b border-slate-100 pb-1 flex items-center justify-between gap-3">
+                          <span className="font-mono">{point.date}</span>
+                          <span className="text-[11px] text-slate-500">
+                            {point.orders} orders
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-slate-600">Sales Total:</span>
+                          <span className="font-mono font-bold text-[#ec1f73]">
+                            {store.currency_symbol}
+                            {point.sales.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-slate-600">Paid Collected:</span>
+                          <span className="font-mono font-bold text-[#5b46b5]">
+                            {store.currency_symbol}
+                            {point.paid.toLocaleString()}
+                          </span>
+                        </div>
+                        {point.due > 0 && (
+                          <div className="flex justify-between gap-4">
+                            <span className="text-slate-600">Credit Due:</span>
+                            <span className="font-mono font-bold text-amber-600">
+                              {store.currency_symbol}
+                              {point.due.toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                  iconType="circle"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="sales"
+                  name={`Sales Revenue (${store.currency_symbol})`}
+                  stroke="#ec1f73"
+                  strokeWidth={3}
+                  dot={{ r: 4, fill: '#ec1f73', strokeWidth: 2, stroke: '#ffffff' }}
+                  activeDot={{ r: 6, fill: '#ec1f73', stroke: '#ffffff', strokeWidth: 2 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="paid"
+                  name={`Collected Paid (${store.currency_symbol})`}
+                  stroke="#5b46b5"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#5b46b5', strokeWidth: 1.5, stroke: '#ffffff' }}
+                  activeDot={{ r: 5, fill: '#5b46b5', stroke: '#ffffff', strokeWidth: 2 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Toggleable Daily Breakdown Table for Date-to-Date Report */}
+          <div className="border-t border-slate-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowDateTable((prev) => !prev)}
+              className="text-xs font-bold text-[#5b46b5] hover:text-[#ec1f73] inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              {showDateTable ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+              <span>
+                {showDateTable
+                  ? 'Hide Date-to-Date Daily Breakdown'
+                  : `View Date-to-Date Daily Breakdown (${trendSeries.length} Days)`}
+              </span>
+            </button>
+
+            {showDateTable && (
+              <div className="mt-3 overflow-x-auto border border-slate-200 rounded-xl max-h-72 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <tr>
+                      <th className="p-2.5">Date</th>
+                      <th className="p-2.5 text-center">Orders</th>
+                      <th className="p-2.5 text-right">Sales Total</th>
+                      <th className="p-2.5 text-right">Paid Collected</th>
+                      <th className="p-2.5 text-right">Due Added</th>
+                      <th className="p-2.5 text-right">Expenses</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono tabular-nums">
+                    {[...trendSeries].reverse().map((row) => (
+                      <tr key={row.date} className="hover:bg-slate-50">
+                        <td className="p-2.5 text-slate-700 font-semibold">{row.date}</td>
+                        <td className="p-2.5 text-center text-slate-600">{row.orders}</td>
+                        <td className="p-2.5 text-right font-bold text-[#ec1f73]">
+                          {store.currency_symbol}
+                          {row.sales.toLocaleString()}
+                        </td>
+                        <td className="p-2.5 text-right font-semibold text-[#5b46b5]">
+                          {store.currency_symbol}
+                          {row.paid.toLocaleString()}
+                        </td>
+                        <td className="p-2.5 text-right text-amber-700">
+                          {store.currency_symbol}
+                          {row.due.toLocaleString()}
+                        </td>
+                        <td className="p-2.5 text-right text-slate-600">
+                          {store.currency_symbol}
+                          {row.expenses.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* 3. TRENDING PRODUCTS SHOWCASE (Matching reference section + segmented pills) */}
@@ -611,33 +1009,57 @@ export const ModernDashboard: React.FC = () => {
             </div>
 
             <div className="divide-y divide-slate-100">
-              {sales.slice(0, 4).map((sale) => (
-                <div
-                  key={sale.id}
-                  className="py-2 flex items-center justify-between gap-3 text-xs"
-                >
-                  <div className="min-w-0">
-                    <div className="font-mono font-bold text-[#5b46b5] truncate">
-                      {sale.invoice_number}
+              {sales.slice(0, 4).map((sale) => {
+                const cust = sale.customer_id
+                  ? customers.find((c) => c.id === sale.customer_id)
+                  : sale.customer_mobile
+                  ? customers.find((c) => c.mobile === sale.customer_mobile)
+                  : undefined;
+                const isDueCleared =
+                  sale.due_amount > 0 && cust !== undefined && (cust.total_due_amount || 0) <= 0;
+                return (
+                  <div
+                    key={sale.id}
+                    className="py-2 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-[#5b46b5] truncate">
+                          {sale.invoice_number}
+                        </span>
+                        {sale.due_amount > 0 && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                              isDueCleared
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-rose-100 text-rose-700'
+                            }`}
+                          >
+                            {isDueCleared
+                              ? 'Due Cleared'
+                              : `Due ${store.currency_symbol}${sale.due_amount}`}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {sale.customer_name} · {sale.date}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 truncate">
-                      {sale.customer_name} · {sale.date}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-mono font-bold tabular-nums text-[#1e1b3a]">
+                        {store.currency_symbol}{sale.grand_total.toLocaleString()}
+                      </span>
+                      <button
+                        onClick={() => setPrintableReceipt({ type: 'sale', data: sale })}
+                        className="px-2.5 py-1 rounded-lg bg-pink-50 hover:bg-[#ec1f73] text-[#ec1f73] hover:text-white font-semibold text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Printer className="w-3 h-3" />
+                        <span>Print</span>
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-mono font-bold tabular-nums text-[#1e1b3a]">
-                      {store.currency_symbol}{sale.grand_total.toLocaleString()}
-                    </span>
-                    <button
-                      onClick={() => setPrintableReceipt({ type: 'sale', data: sale })}
-                      className="px-2.5 py-1 rounded-lg bg-pink-50 hover:bg-[#ec1f73] text-[#ec1f73] hover:text-white font-semibold text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Printer className="w-3 h-3" />
-                      <span>Print</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {sales.length === 0 && (
                 <div className="py-6 text-center text-xs text-slate-400">
                   No sales yet. Open POS Terminal to complete your first sale.

@@ -236,13 +236,16 @@ export const UsersManagement: React.FC = () => {
     }
   };
 
-  const filteredUsers = users.filter((u) => {
+  const isDemoEnabled = store.demo_mode_enabled !== false;
+  const visibleUsers = users.filter((u) => isDemoEnabled || u.role !== 'visitor');
+
+  const filteredUsers = visibleUsers.filter((u) => {
     if (roleFilter === 'all') return true;
     if (roleFilter === 'salesman') return u.role === 'salesman' || u.role === 'cashier';
     return u.role === roleFilter;
   });
 
-  const salesmanCount = users.filter((u) => u.role === 'salesman' || u.role === 'cashier').length;
+  const salesmanCount = visibleUsers.filter((u) => u.role === 'salesman' || u.role === 'cashier').length;
 
   return (
     <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
@@ -267,13 +270,29 @@ export const UsersManagement: React.FC = () => {
         </button>
       </div>
 
+      {!isDemoEnabled && (
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Production Security Active: Public Demo Visitor Account (demo / 1234) is completely disabled & hidden.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('settings')}
+            className="text-[11px] font-bold text-[#5b46b5] hover:underline shrink-0 cursor-pointer"
+          >
+            Module Settings →
+          </button>
+        </div>
+      )}
+
       {/* Role Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2">
         {[
-          { id: 'all', label: `All Staff (${users.length})` },
+          { id: 'all', label: `All Staff (${visibleUsers.length})` },
           { id: 'salesman', label: `Salesman & Cashier (${salesmanCount})` },
-          { id: 'manager', label: `Managers (${users.filter((u) => u.role === 'manager').length})` },
-          { id: 'admin', label: `Admins (${users.filter((u) => u.role === 'admin').length})` },
+          { id: 'manager', label: `Managers (${visibleUsers.filter((u) => u.role === 'manager').length})` },
+          { id: 'admin', label: `Admins (${visibleUsers.filter((u) => u.role === 'admin').length})` },
         ].map((tab) => (
           <button
             key={tab.id}

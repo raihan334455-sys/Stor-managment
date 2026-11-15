@@ -1,21 +1,41 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Printer, X, CheckCircle2 } from 'lucide-react';
-import { Sale, CustomerDueTransaction } from '../../types';
+import { Printer, X, CheckCircle2, Download, Share2 } from 'lucide-react';
+import { Sale, CustomerDueTransaction, SupplierDueTransaction } from '../../types';
+import {
+  downloadReceiptAsPng,
+  resolveCustomerForSale,
+  UnifiedReceiptPayload,
+} from '../../utils/receiptDownload';
+import { getMobilePurchaseStats } from '../../utils/customerPurchaseStats';
+import { ReceiptShareModal } from '../Receipts/ReceiptShareModal';
 
 interface ThermalReceiptProps {
-  receipt: { type: 'sale' | 'due' | 'quotation'; data: any } | null;
+  receipt: { type: 'sale' | 'due' | 'supplier_due' | 'quotation'; data: any } | null;
   onClose: () => void;
 }
 
 export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose }) => {
-  const { store } = useApp();
+  const { store, customers, customerDues, suppliers, supplierDues, sales } = useApp();
   const printRef = useRef<HTMLDivElement>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   if (!receipt) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownload = () => {
+    if (receipt.type === 'quotation') return;
+    downloadReceiptAsPng(receipt, {
+      store,
+      customers,
+      customerDues,
+      suppliers,
+      supplierDues,
+      sales,
+    });
   };
 
   const is58mm = store.receipt_size === '58mm';
@@ -75,6 +95,20 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
               <>
                 {(() => {
                   const sale = receipt.data as Sale;
+                  const liveCustomer = resolveCustomerForSale(sale, customers);
+                  const isDueClearedLater =
+                    sale.due_amount > 0 &&
+                    liveCustomer !== undefined &&
+                    (liveCustomer.total_due_amount || 0) <= 0.01;
+                  const latestDuePayment = isDueClearedLater
+                    ? customerDues.find(
+                        (d) =>
+                          d.customer_id === liveCustomer.id &&
+                          d.type === 'due_payment' &&
+                          d.balance_after <= 0.01
+                      )
+                    : undefined;
+
                   return (
                     <div>
                       <div className="py-2 border-b border-dashed border-slate-400 text-[11px] space-y-0.5">
@@ -101,10 +135,28 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
                           </div>
                         )}
                         {store.receipt_show_customer && sale.customer_mobile && (
-                          <div className="flex justify-between text-[10px]">
-                            <span>Mobile:</span>
-                            <span>{sale.customer_mobile}</span>
-                          </div>
+                          <>
+                            <div className="flex justify-between text-[10px]">
+                              <span>Mobile:</span>
+                              <span>{sale.customer_mobile}</span>
+                            </div>
+                            {(() => {
+                              const mStats = getMobilePurchaseStats(
+                                sale.customer_mobile,
+                                sales,
+                                sale.customer_id
+                              );
+                              if (mStats.totalOrders <= 0) return null;
+                              return (
+                                <div className="flex justify-between text-[9px] text-[#5b46b5] font-semibold">
+                                  <span>Total Bought (Mobile):</span>
+                                  <span>
+                                    {mStats.totalProductQuantity} pcs ({mStats.totalOrders} orders)
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </>
                         )}
                       </div>
 
@@ -177,19 +229,56 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
                           <span className="uppercase font-semibold">{sale.payment_method}</span>
                         </div>
                         <div className="flex justify-between text-[10px]">
-                          <span>Paid Amount:</span>
+                          <span>Paid at Sale:</span>
                           <span className="font-semibold">
                             {store.currency_symbol}
                             {sale.paid_amount}
                           </span>
                         </div>
-                        {sale.due_amount > 0 && (
-                          <div className="flex justify-between text-xs font-bold text-rose-600 bg-rose-50 p-1 rounded">
-                            <span>CUSTOMER DUE:</span>
-                            <span>
-                              {store.currency_symbol}
-                              {sale.due_amount}
-                            </span>
+                        {sale.due_amount > 0 && isDueClearedLater ? (
+                          <div className="mt-1.5 space-y-1">
+                            <div className="flex justify-between text-[10px] text-slate-500 line-through">
+                              <span>Initial Invoice Due:</span>
+                              <span>
+                                {store.currency_symbol}
+                                {sale.due_amount}
+                              </span>
+                            </div>
+                            <div className="text-center font-bold text-xs text-emerald-800 bg-emerald-50 py-1.5 px-2 rounded border-2 border-dashed border-emerald-500 uppercase">
+                              *** DUE CLEARED / পরিশোধিত ***
+                              <div className="text-[9px] font-semibold mt-0.5">
+                                Current Balance: {store.currency_symbol}0 (CLEAR)
+                              </div>
+                              {latestDuePayment && (
+                                <div className="text-[8px] font-normal text-emerald-700">
+                                  Cleared: {latestDuePayment.date} {latestDuePayment.time}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : sale.due_amount > 0 ? (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs font-bold text-rose-600 bg-rose-50 p-1 rounded">
+                              <span>CUSTOMER DUE:</span>
+                              <span>
+                                {store.currency_symbol}
+                                {sale.due_amount}
+                              </span>
+                            </div>
+                            {liveCustomer && liveCustomer.total_due_amount !== sale.due_amount && (
+                              <div className="flex justify-between text-[10px] font-semibold text-rose-700">
+                                <span>Current Customer Due:</span>
+                                <span>
+                                  {store.currency_symbol}
+                                  {liveCustomer.total_due_amount}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex justify-between text-[10px] font-bold text-emerald-700 pt-0.5">
+                            <span>Payment Status:</span>
+                            <span>PAID / CLEAR</span>
                           </div>
                         )}
                       </div>
@@ -204,10 +293,36 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
               <>
                 {(() => {
                   const dueTx = receipt.data as CustomerDueTransaction;
+                  const liveCustomer =
+                    customers.find((c) => c.id === dueTx.customer_id) ||
+                    customers.find(
+                      (c) => (c.mobile || '').trim() === (dueTx.mobile || '').trim()
+                    );
+                  const isAccountCleared =
+                    dueTx.balance_after <= 0.01 ||
+                    (liveCustomer !== undefined && (liveCustomer.total_due_amount || 0) <= 0.01);
+                  const latestClearTx =
+                    isAccountCleared && dueTx.balance_after > 0.01 && liveCustomer
+                      ? customerDues.find(
+                          (d) =>
+                            d.customer_id === liveCustomer.id &&
+                            d.type === 'due_payment' &&
+                            d.balance_after <= 0.01
+                        )
+                      : undefined;
+
                   return (
                     <div className="py-2 border-b border-dashed border-slate-400 space-y-1 text-[11px]">
-                      <div className="text-center font-bold text-xs uppercase bg-amber-100 py-1 my-1 rounded border border-amber-300">
-                        CUSTOMER DUE PAYMENT RECEIPT
+                      <div
+                        className={`text-center font-bold text-xs uppercase py-1 my-1 rounded border ${
+                          isAccountCleared
+                            ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
+                            : 'bg-amber-100 border-amber-300 text-slate-900'
+                        }`}
+                      >
+                        {isAccountCleared
+                          ? 'DUE CLEARED PAYMENT RECEIPT'
+                          : 'CUSTOMER DUE PAYMENT RECEIPT'}
                       </div>
                       <div className="flex justify-between">
                         <span>Receipt ID:</span>
@@ -227,6 +342,18 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
                         <span>Mobile Number:</span>
                         <span>{dueTx.mobile}</span>
                       </div>
+                      {dueTx.mobile && (() => {
+                        const mStats = getMobilePurchaseStats(dueTx.mobile, sales, dueTx.customer_id);
+                        if (mStats.totalOrders <= 0) return null;
+                        return (
+                          <div className="flex justify-between text-[9px] text-[#5b46b5] font-semibold">
+                            <span>Total Bought (Mobile):</span>
+                            <span>
+                              {mStats.totalProductQuantity} pcs ({mStats.totalOrders} orders)
+                            </span>
+                          </div>
+                        );
+                      })()}
                       <div className="py-1 border-t border-b border-slate-200 my-1 space-y-1">
                         <div className="flex justify-between text-slate-600">
                           <span>Previous Due:</span>
@@ -243,13 +370,36 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
                           </span>
                         </div>
                         <div className="flex justify-between font-bold text-slate-900 border-t border-slate-300 pt-1">
-                          <span>Remaining Due:</span>
-                          <span className="text-rose-600">
+                          <span>
+                            {dueTx.balance_after > 0 && isAccountCleared
+                              ? 'Balance After This Pay:'
+                              : 'Remaining Due:'}
+                          </span>
+                          <span className={isAccountCleared ? 'text-emerald-700' : 'text-rose-600'}>
                             {store.currency_symbol}
-                            {dueTx.balance_after}
+                            {dueTx.balance_after} {dueTx.balance_after <= 0 ? '(CLEAR)' : ''}
                           </span>
                         </div>
+                        {dueTx.balance_after > 0 && isAccountCleared && (
+                          <div className="flex justify-between font-bold text-emerald-700">
+                            <span>Current Account Due:</span>
+                            <span>{store.currency_symbol}0 (CLEARED)</span>
+                          </div>
+                        )}
                       </div>
+                      {isAccountCleared && (
+                        <div className="text-center font-bold text-xs text-emerald-800 bg-emerald-50 py-1.5 px-2 rounded border-2 border-dashed border-emerald-500 uppercase my-1">
+                          *** DUE CLEARED / পরিশোধিত ***
+                          <div className="text-[9px] font-semibold mt-0.5">
+                            STATUS: ALL DUES PAID IN FULL
+                          </div>
+                          {latestClearTx && (
+                            <div className="text-[8px] font-normal text-emerald-700">
+                              Cleared On: {latestClearTx.date} {latestClearTx.time}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex justify-between text-[10px]">
                         <span>Payment Method:</span>
                         <span className="uppercase font-semibold">{dueTx.payment_method}</span>
@@ -258,6 +408,126 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
                         <div className="flex justify-between text-[10px]">
                           <span>Received By:</span>
                           <span>{dueTx.created_by}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* RECEIPT TYPE: SUPPLIER DUE PAYMENT */}
+            {receipt.type === 'supplier_due' && (
+              <>
+                {(() => {
+                  const supTx = receipt.data as SupplierDueTransaction;
+                  const liveSupplier = suppliers.find((s) => s.id === supTx.supplier_id);
+                  const isSupCleared =
+                    supTx.balance_after <= 0 ||
+                    (liveSupplier !== undefined && (liveSupplier.total_due || 0) <= 0);
+                  const latestSupClear =
+                    isSupCleared && supTx.balance_after > 0 && liveSupplier
+                      ? supplierDues.find(
+                          (d) =>
+                            d.supplier_id === liveSupplier.id &&
+                            d.type === 'due_payment' &&
+                            d.balance_after <= 0
+                        )
+                      : undefined;
+
+                  return (
+                    <div className="py-2 border-b border-dashed border-slate-400 space-y-1 text-[11px]">
+                      <div
+                        className={`text-center font-bold text-xs uppercase py-1 my-1 rounded border ${
+                          isSupCleared
+                            ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
+                            : 'bg-amber-100 border-amber-300 text-slate-900'
+                        }`}
+                      >
+                        {isSupCleared
+                          ? 'SUPPLIER DUE CLEARED RECEIPT'
+                          : 'SUPPLIER DUE PAYMENT RECEIPT'}
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Receipt ID:</span>
+                        <span className="font-semibold">{supTx.id.slice(-8).toUpperCase()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Date/Time:</span>
+                        <span>
+                          {supTx.date} {supTx.time}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Supplier Name:</span>
+                        <span className="font-bold">{supTx.supplier_name}</span>
+                      </div>
+                      {liveSupplier?.mobile && (
+                        <div className="flex justify-between">
+                          <span>Mobile:</span>
+                          <span>{liveSupplier.mobile}</span>
+                        </div>
+                      )}
+                      <div className="py-1 border-t border-b border-slate-200 my-1 space-y-1">
+                        <div className="flex justify-between text-slate-600">
+                          <span>Previous Payable:</span>
+                          <span>
+                            {store.currency_symbol}
+                            {supTx.total_amount}
+                          </span>
+                        </div>
+                        <div className="flex justify-between font-bold text-emerald-700 text-xs">
+                          <span>Payment Made:</span>
+                          <span>
+                            -{store.currency_symbol}
+                            {supTx.paid_amount}
+                          </span>
+                        </div>
+                        <div className="flex justify-between font-bold text-slate-900 border-t border-slate-300 pt-1">
+                          <span>
+                            {supTx.balance_after > 0 && isSupCleared
+                              ? 'Balance After This Pay:'
+                              : 'Remaining Payable:'}
+                          </span>
+                          <span className={isSupCleared ? 'text-emerald-700' : 'text-rose-600'}>
+                            {store.currency_symbol}
+                            {supTx.balance_after} {supTx.balance_after <= 0 ? '(CLEAR)' : ''}
+                          </span>
+                        </div>
+                        {supTx.balance_after > 0 && isSupCleared && (
+                          <div className="flex justify-between font-bold text-emerald-700">
+                            <span>Current Supplier Due:</span>
+                            <span>{store.currency_symbol}0 (CLEARED)</span>
+                          </div>
+                        )}
+                      </div>
+                      {isSupCleared && (
+                        <div className="text-center font-bold text-xs text-emerald-800 bg-emerald-50 py-1.5 px-2 rounded border-2 border-dashed border-emerald-500 uppercase my-1">
+                          *** DUE CLEARED / পরিশোধিত ***
+                          <div className="text-[9px] font-semibold mt-0.5">
+                            STATUS: SUPPLIER DUE PAID IN FULL
+                          </div>
+                          {latestSupClear && (
+                            <div className="text-[8px] font-normal text-emerald-700">
+                              Cleared On: {latestSupClear.date} {latestSupClear.time}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex justify-between text-[10px]">
+                        <span>Payment Method:</span>
+                        <span className="uppercase font-semibold">{supTx.payment_method}</span>
+                      </div>
+                      {supTx.notes && (
+                        <div className="flex justify-between text-[10px]">
+                          <span>Notes:</span>
+                          <span>{supTx.notes}</span>
+                        </div>
+                      )}
+                      {supTx.created_by && (
+                        <div className="flex justify-between text-[10px]">
+                          <span>Paid By:</span>
+                          <span>{supTx.created_by}</span>
                         </div>
                       )}
                     </div>
@@ -306,16 +576,38 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
             <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
             <span>Transaction Committed to Storage</span>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 ml-auto">
             <button
+              type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              className="px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
             >
               Close
             </button>
+            {receipt.type !== 'quotation' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  className="px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-[#ec1f73] hover:bg-[#d61665] rounded-lg shadow transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>Share (SMS / WA)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  className="px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-[#5b46b5] hover:bg-[#4a379c] rounded-lg shadow transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download PNG</span>
+                </button>
+              </>
+            )}
             <button
+              type="button"
               onClick={handlePrint}
-              className="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow transition-colors flex items-center gap-2"
+              className="px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               <span>Print Receipt</span>
@@ -323,6 +615,13 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({ receipt, onClose
           </div>
         </div>
       </div>
+
+      {shareOpen && receipt.type !== 'quotation' && (
+        <ReceiptShareModal
+          receipt={receipt as UnifiedReceiptPayload}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   );
 };

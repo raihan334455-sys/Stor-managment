@@ -18,6 +18,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { Quotation, QuotationItem } from '../../types';
+import { isProductEnabled } from '../../utils/modules';
 
 export const QuotationsManagement: React.FC = () => {
   const { quotations, products, store, activeUser, setActiveTab, completeSale, addAuditLog, refreshData } = useApp();
@@ -74,11 +75,12 @@ export const QuotationsManagement: React.FC = () => {
   const [tempQty, setTempQty] = useState('1');
   const [tempPrice, setTempPrice] = useState('');
 
-  const selectedProduct = products.find((p) => p.id === selectedProdId);
+  const enabledProducts = products.filter((p) => !p.archived && isProductEnabled(p, store));
+  const selectedProduct = enabledProducts.find((p) => p.id === selectedProdId);
 
   const handleProductChange = (prodId: string) => {
     setSelectedProdId(prodId);
-    const prod = products.find((p) => p.id === prodId);
+    const prod = enabledProducts.find((p) => p.id === prodId);
     if (prod && prod.variants.length > 0) {
       setSelectedVarId(prod.variants[0].id);
       setTempPrice(prod.variants[0].selling_price.toString());
@@ -264,7 +266,7 @@ export const QuotationsManagement: React.FC = () => {
             setItems([]);
             setCustName('');
             setCustMobile('');
-            if (products.length > 0) handleProductChange(products[0].id);
+            if (enabledProducts.length > 0) handleProductChange(enabledProducts[0].id);
           }}
           className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 transition-colors self-start sm:self-auto"
         >
@@ -468,7 +470,7 @@ export const QuotationsManagement: React.FC = () => {
                       onChange={(e) => handleProductChange(e.target.value)}
                       className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs"
                     >
-                      {products.map((p) => (
+                      {enabledProducts.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
                         </option>

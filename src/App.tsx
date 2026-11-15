@@ -20,7 +20,23 @@ import { AuditLogsManagement } from './components/Audit/AuditLogsManagement';
 import { GoogleDriveManagement } from './components/GoogleDrive/GoogleDriveManagement';
 import { LoginScreen } from './components/Auth/LoginScreen';
 import { ModernDashboard } from './components/Dashboard/ModernDashboard';
+import { PaymentReceiptsCenter } from './components/Receipts/PaymentReceiptsCenter';
+import { ReceiptShareModal } from './components/Receipts/ReceiptShareModal';
+import { MedicineManagement } from './components/Products/MedicineManagement';
+import { GeneralProductManagement } from './components/Products/GeneralProductManagement';
+import { AccountsManagement } from './components/Accounts/AccountsManagement';
+import { EmployeeManagement } from './components/Employees/EmployeeManagement';
+import { SettingsManagement } from './components/Settings/SettingsManagement';
 import { canAccessTab } from './utils/security';
+import {
+  isGeneralProductModuleEnabled,
+  isMedicineModuleEnabled,
+} from './utils/modules';
+import {
+  downloadReceiptAsPng,
+  resolveCustomerForSale,
+  UnifiedReceiptPayload,
+} from './utils/receiptDownload';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -55,6 +71,7 @@ import {
   FileSpreadsheet,
   Trash2,
   Camera,
+  Share2,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -230,9 +247,21 @@ const DashboardView: React.FC = () => {
 /*                                SALES HISTORY VIEW                         */
 /* -------------------------------------------------------------------------- */
 const SalesHistoryView: React.FC = () => {
-  const { sales, store, setPrintableReceipt, voidSale, checkPermission } = useApp();
+  const {
+    sales,
+    customers,
+    customerDues,
+    suppliers,
+    supplierDues,
+    store,
+    setPrintableReceipt,
+    setActiveTab,
+    voidSale,
+    checkPermission,
+  } = useApp();
   const [search, setSearch] = useState('');
   const [voidTarget, setVoidTarget] = useState<any>(null);
+  const [shareReceipt, setShareReceipt] = useState<UnifiedReceiptPayload | null>(null);
   const canVoidSale = checkPermission('invoice_cancel');
 
   const filteredSales = sales.filter(
@@ -253,15 +282,25 @@ const SalesHistoryView: React.FC = () => {
           <p className="text-xs text-slate-500">Search past invoices, reprint thermal receipts, and view sale breakdown.</p>
         </div>
 
-        <div className="relative max-w-xs w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search invoice #, customer name or mobile..."
-            className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
-          />
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search invoice #, customer name or mobile..."
+              className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('receipts')}
+            className="px-3.5 py-2.5 rounded-xl bg-[#5b46b5] hover:bg-[#4a379c] text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>All Payment Receipts</span>
+          </button>
         </div>
       </div>
 
@@ -301,17 +340,56 @@ const SalesHistoryView: React.FC = () => {
                   {s.grand_total}
                 </td>
                 <td className="p-3.5 text-center">
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      s.status === 'completed'
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        : 'bg-rose-100 text-rose-800 border border-rose-200'
-                    }`}
-                  >
-                    {s.status}
-                  </span>
+                  <div className="inline-flex flex-wrap items-center justify-center gap-1">
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        s.status === 'completed'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-rose-100 text-rose-800 border border-rose-200'
+                      }`}
+                    >
+                      {s.status}
+                    </span>
+                    {s.status === 'completed' && s.due_amount > 0 && (() => {
+                      const cust = resolveCustomerForSale(s, customers);
+                      const isCleared = cust !== undefined && (cust.total_due_amount || 0) <= 0.01;
+                      return (
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            isCleared
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-rose-100 text-rose-700 border border-rose-200'
+                          }`}
+                        >
+                          {isCleared ? 'Due Cleared' : `Due ${store.currency_symbol}${s.due_amount}`}
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </td>
-                <td className="p-3.5 text-right flex items-center justify-end gap-2">
+                <td className="p-3.5 text-right flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShareReceipt({ type: 'sale', data: s })}
+                    title="Share Receipt via SMS / WhatsApp / Email / Other Apps"
+                    className="px-2.5 py-1 bg-[#ec1f73] hover:bg-[#d61665] text-white rounded text-[11px] font-semibold inline-flex items-center gap-1 shadow-sm cursor-pointer"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span>Share</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadReceiptAsPng(
+                        { type: 'sale', data: s },
+                        { store, customers, customerDues, suppliers, supplierDues, sales }
+                      )
+                    }
+                    className="px-2.5 py-1 bg-[#5b46b5] hover:bg-[#4a379c] text-white rounded text-[11px] font-semibold inline-flex items-center gap-1 shadow-sm cursor-pointer"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Download</span>
+                  </button>
                   <button
                     onClick={() => setPrintableReceipt({ type: 'sale', data: s })}
                     className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded text-[11px] font-semibold inline-flex items-center gap-1 shadow-sm cursor-pointer"
@@ -374,460 +452,31 @@ const SalesHistoryView: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-/* -------------------------------------------------------------------------- */
-/*                                SETTINGS VIEW                              */
-/* -------------------------------------------------------------------------- */
-const SettingsView: React.FC = () => {
-  const { store, updateStore, clearTransactionHistory, wipeAllData, resetToDemoData, activeUser, checkPermission, setActiveTab } = useApp();
-  const [form, setForm] = useState(store);
-  const [savedMsg, setSavedMsg] = useState(false);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{
-    type: 'clear_history' | 'wipe_all' | 'reset_demo';
-    title: string;
-    description: string;
-    keyword: string;
-  } | null>(null);
-  const [confirmInput, setConfirmInput] = useState('');
-  const [confirmError, setConfirmError] = useState('');
-
-  if (!checkPermission('settings_manage')) {
-    return (
-      <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
-        <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
-          <ShieldAlert className="w-8 h-8" />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-            আপনার অ্যাকাউন্টে স্টোর সেটিংস দেখার বা পরিবর্তন করার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
-          </p>
-        </div>
-        <div className="pt-2">
-          <button
-            onClick={() => setActiveTab('pos')}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateStore(form);
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 3000);
-  };
-
-  const handleExecuteDataAction = async () => {
-    if (!confirmModal) return;
-    if (confirmInput.trim().toUpperCase() !== confirmModal.keyword) {
-      setConfirmError(`অনুগ্রহ করে নিশ্চিত করতে '${confirmModal.keyword}' লিখুন`);
-      return;
-    }
-
-    if (confirmModal.type === 'clear_history') {
-      clearTransactionHistory();
-      setActionSuccess('সকল বিক্রয়, দেনা-পাওনা ও লেনদেন হিস্ট্রি মুছে ফেলা হয়েছে (পণ্য ক্যাটালগ সংরক্ষিত আছে)। All transaction history cleared.');
-    } else if (confirmModal.type === 'wipe_all') {
-      wipeAllData();
-      setActionSuccess('সম্পূর্ণ ডেটা মুছে স্টোর একদম নতুন অবস্থায় সেট করা হয়েছে। All store data wiped clean for fresh start.');
-    } else if (confirmModal.type === 'reset_demo') {
-      await resetToDemoData();
-      setActionSuccess('স্টোর সফলভাবে ডেমো ডেটায় রিসেট হয়েছে। Database reset to default demo seeds.');
-    }
-
-    setConfirmModal(null);
-    setConfirmInput('');
-    setConfirmError('');
-    setTimeout(() => setActionSuccess(null), 5000);
-  };
-
-  return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
-          <Settings className="w-6 h-6 text-blue-600" />
-          <span>Store & Thermal Printer Settings</span>
-        </h1>
-        <p className="text-xs text-slate-500">Configure store branding, currency, receipt header/footer, and thermal printer sizing.</p>
-      </div>
-
-      {savedMsg && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span>Store configuration updated successfully!</span>
-        </div>
-      )}
-
-      {actionSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{actionSuccess}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
-        <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">দোকানের তথ্য ও রসিদ সেটিংস (Store Profile & Receipt)</h2>
-        
-        {/* Shop Logo Upload Section */}
-        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-white border border-slate-300 overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
-            {form.store_logo ? (
-              <img src={form.store_logo} alt="Store Logo" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full bg-[#201c56] text-white flex items-center justify-center font-bold text-2xl">
-                {form.store_name?.charAt(0) || 'S'}
-              </div>
-            )}
-          </div>
-          <div className="flex-1 space-y-1 text-center sm:text-left">
-            <span className="text-xs font-bold text-slate-800 block">দোকানের লোগো (Shop Logo Upload)</span>
-            <p className="text-[11px] text-slate-500">
-              আপনার দোকানের লোগো আপলোড করুন। এটি হেডার, সাইডবার ও থার্মাল রসিদে প্রিন্ট হবে।
-            </p>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
-              <label className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5 transition-colors">
-                <Upload className="w-3.5 h-3.5" />
-                <span>লোগো আপলোড করুন (Upload Logo)</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      setForm({ ...form, store_logo: reader.result as string, receipt_show_logo: true });
-                    };
-                    reader.readAsDataURL(file);
-                  }}
-                />
-              </label>
-              {form.store_logo && (
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, store_logo: undefined })}
-                  className="px-3 py-1.5 bg-white hover:bg-rose-50 border border-slate-200 text-rose-600 rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>লোগো মুছুন (Remove)</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Store Name *</label>
-            <input
-              type="text"
-              required
-              value={form.store_name}
-              onChange={(e) => setForm({ ...form, store_name: e.target.value })}
-              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Store Mobile / Phone *</label>
-            <input
-              type="text"
-              required
-              value={form.store_mobile}
-              onChange={(e) => setForm({ ...form, store_mobile: e.target.value })}
-              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Store Address</label>
-            <input
-              type="text"
-              value={form.store_address}
-              onChange={(e) => setForm({ ...form, store_address: e.target.value })}
-              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Currency Symbol</label>
-            <input
-              type="text"
-              value={form.currency_symbol}
-              onChange={(e) => setForm({ ...form, currency_symbol: e.target.value })}
-              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-mono focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Receipt Paper Size</label>
-            <select
-              value={form.receipt_size}
-              onChange={(e) => setForm({ ...form, receipt_size: e.target.value as '80mm' | '58mm' })}
-              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-            >
-              <option value="80mm">80mm Standard POS Printer</option>
-              <option value="58mm">58mm Compact Bluetooth Thermal Printer</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Receipt Footer Note</label>
-            <input
-              type="text"
-              value={form.receipt_footer_note}
-              onChange={(e) => setForm({ ...form, receipt_footer_note: e.target.value })}
-              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Due Overdue Alert Days (বকেয়া রিমাইন্ডার দিন)
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={365}
-                value={form.due_alert_days ?? 7}
-                onChange={(e) =>
-                  setForm({ ...form, due_alert_days: parseInt(e.target.value, 10) || 7 })
-                }
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-mono focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Priority Due Alert Amount ({form.currency_symbol})
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={form.due_alert_threshold ?? 500}
-                onChange={(e) =>
-                  setForm({ ...form, due_alert_threshold: parseFloat(e.target.value) || 0 })
-                }
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-mono focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Payment Info for Due SMS / WhatsApp Alerts (bKash / Nagad / Bank)
-              </label>
-              <input
-                type="text"
-                value={form.due_payment_info || ''}
-                onChange={(e) => setForm({ ...form, due_payment_info: e.target.value })}
-                placeholder="e.g. bKash/Nagad Personal: 01711-223344"
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          <div className="md:col-span-2 pt-2">
-            <label className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
-              <div>
-                <span className="text-xs font-bold text-slate-800 block">
-                  Public Demo Visitor Account (demo / 1234)
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  লাইভ দোকানে নিরাপত্তার জন্য এটি বন্ধ রাখুন (Disable Demo Login for production security).
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={form.demo_mode_enabled !== false}
-                onChange={(e) => setForm({ ...form, demo_mode_enabled: e.target.checked })}
-                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0"
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="pt-3 border-t border-slate-100 flex justify-end">
-          <button
-            type="submit"
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <Save className="w-4 h-4" />
-            <span>Save Configuration</span>
-          </button>
-        </div>
-      </form>
-
-      {/* Danger Zone: Data Remove & History Reset Operations (Admin Only) */}
-      {activeUser.role === 'admin' && (
-        <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
-            <ShieldAlert className="w-5 h-5 text-rose-600" />
-            <span>ডেটা মুছে ফেলা ও হিস্ট্রি রিসেট (Data Management & Reset Zone)</span>
-          </div>
-          <p className="text-xs text-slate-500">
-            আপনার ব্যবসার সুবিধার্থে টেস্ট বিক্রয় হিস্ট্রি মুছে ফেলা অথবা নতুন লাইভ শপ শুরুর জন্য নিচের অপশনগুলো ব্যবহার করুন।
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-            {/* Card 1: Clear Transaction History Only (Keep Products) */}
-            <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl space-y-3 flex flex-col justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                  <RotateCcw className="w-4 h-4 text-amber-600" />
-                  <span>সমস্ত বিক্রয় ও লেনদেন হিস্ট্রি মুছুন</span>
-                </div>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  পণ্য ক্যাটালগ ও ক্যাটাগরি <strong>ঠিক থাকবে</strong>। শুধু সমস্ত টেস্ট বিক্রয়, দেনা-পাওনা ledger, খরচ, ও ক্যাশ ড্রয়ার হিস্ট্রি মুছে ০ করা হবে।
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmModal({
-                    type: 'clear_history',
-                    title: 'বিক্রয় ও লেনদেন হিস্ট্রি মুছে ফেলা নিশ্চিত করুন',
-                    description: 'এই অপশনে ক্লিক করলে আপনার সমস্ত বিক্রয় রেকর্ড, কাস্টমার বাকি লেজার, সাপ্লায়ার বাকি লেজার এবং খরচের হিস্ট্রি মুছে যাবে। তবে পণ্যের তালিকা (Products Catalog) অক্ষত থাকবে।',
-                    keyword: 'CLEAR',
-                  });
-                  setConfirmInput('');
-                }}
-                className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Clear Transaction History</span>
-              </button>
-            </div>
-
-            {/* Card 2: Wipe All Data Clean (Fresh Store Launch) */}
-            <div className="p-4 bg-rose-50/60 border border-rose-200 rounded-xl space-y-3 flex flex-col justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-rose-900 font-bold text-xs">
-                  <Trash2 className="w-4 h-4 text-rose-600" />
-                  <span>সব ডেটা মুছে একদম নতুন শুরু (Wipe All Data)</span>
-                </div>
-                <p className="text-[11px] text-rose-800 leading-relaxed">
-                  দোকানের পণ্য, ক্যাটাগরি, কাস্টমার, বিক্রয় সব কিছু মুছে সম্পূর্ণ খালি ডাটাবেস নিয়ে ফ্রেশ বিজনেস শুরু করুন।
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmModal({
-                    type: 'wipe_all',
-                    title: 'সম্পূর্ণ স্টোর ডেটা ওয়াইপ নিশ্চিত করুন',
-                    description: 'এটি আপনার দোকানের পণ্য তালিকা, স্টক, কাস্টমার, বিক্রয় সহ সমস্ত ডেটা চিরতরে মুছে ফেলবে এবং একদম খালি স্টোর তৈরি করবে।',
-                    keyword: 'WIPE',
-                  });
-                  setConfirmInput('');
-                }}
-                className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Wipe All Data (Fresh Start)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Safety Confirmation Modal (Admin Only) */}
-      {activeUser.role === 'admin' && confirmModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
-            <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
-              <AlertTriangle className="w-5 h-5 shrink-0" />
-              <span>{confirmModal.title}</span>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              {confirmModal.description}
-            </p>
-
-            <div className="space-y-1 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <label className="block text-[11px] font-semibold text-slate-700">
-                নিশ্চিত করতে নিচে <strong className="text-rose-600 font-mono">{confirmModal.keyword}</strong> লিখুন:
-              </label>
-              <input
-                type="text"
-                placeholder={`Type ${confirmModal.keyword}`}
-                value={confirmInput}
-                onChange={(e) => {
-                  setConfirmInput(e.target.value);
-                  setConfirmError('');
-                }}
-                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold text-center tracking-widest text-rose-600 focus:outline-none focus:border-rose-500 uppercase"
-                autoFocus
-              />
-              {confirmError && <p className="text-[11px] text-rose-600 font-semibold pt-1">{confirmError}</p>}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmModal(null);
-                  setConfirmInput('');
-                  setConfirmError('');
-                }}
-                className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                বাতিল (Cancel)
-              </button>
-              <button
-                type="button"
-                disabled={confirmInput.trim().toUpperCase() !== confirmModal.keyword}
-                onClick={() => void handleExecuteDataAction()}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
-              >
-                নিশ্চিত করুন (Confirm & Proceed)
-              </button>
-            </div>
-          </div>
-        </div>
+      {shareReceipt && (
+        <ReceiptShareModal
+          receipt={shareReceipt}
+          onClose={() => setShareReceipt(null)}
+        />
       )}
     </div>
   );
 };
 
-/* -------------------------------------------------------------------------- */
-/*                                GENERIC FALLBACK TAB                       */
-/* -------------------------------------------------------------------------- */
-const GenericTabPlaceholder: React.FC<{ title: string; description: string }> = ({ title, description }) => {
-  return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 flex flex-col items-center justify-center text-center space-y-4">
-      <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center font-bold shadow-sm">
-        <Package className="w-8 h-8" />
-      </div>
-      <div className="max-w-md">
-        <h2 className="text-lg font-bold text-slate-800">{title} Module Active</h2>
-        <p className="text-xs text-slate-500 mt-1">{description}</p>
-      </div>
-    </div>
-  );
-};
+
 
 /* -------------------------------------------------------------------------- */
 /*                                MAIN APPLICATION                           */
 /* -------------------------------------------------------------------------- */
 const AppContent: React.FC = () => {
-  const { activeTab, setActiveTab, printableReceipt, setPrintableReceipt, isAuthenticated, activeUser } = useApp();
+  const { activeTab, setActiveTab, printableReceipt, setPrintableReceipt, isAuthenticated, activeUser, store } = useApp();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   if (!isAuthenticated) {
     return <LoginScreen />;
   }
+
+  const medEnabled = isMedicineModuleEnabled(store);
+  const genEnabled = isGeneralProductModuleEnabled(store);
 
   const renderTabContent = () => {
     if (!canAccessTab(activeUser, activeTab)) {
@@ -861,26 +510,61 @@ const AppContent: React.FC = () => {
       case 'pos':
         return <POSView />;
       case 'products':
+        if (!medEnabled && !genEnabled) {
+          return (
+            <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
+              <div className="w-16 h-16 bg-slate-100 text-slate-500 rounded-2xl flex items-center justify-center mx-auto">
+                <Package className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-lg font-bold text-slate-800">Product & Medicine Modules Closed</h2>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                  Medicine Management এবং General Product Management উভয় মডিউল বর্তমানে বন্ধ (OFF) আছে। চালু করতে Store Settings &gt; Module ON/OFF ব্যবহার করুন।
+                </p>
+              </div>
+              {canAccessTab(activeUser, 'settings') && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('settings')}
+                  className="px-5 py-2.5 bg-[#5b46b5] hover:bg-[#4a379c] text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Open Module ON/OFF Settings</span>
+                </button>
+              )}
+            </div>
+          );
+        }
         return <ProductManagement />;
+      case 'medicine':
+        return <MedicineManagement />;
+      case 'general_products':
+        return <GeneralProductManagement />;
       case 'inventory':
         return <StockManagement />;
       case 'customers':
       case 'customer_due':
         return <CustomerManagement />;
+      case 'receipts':
+        return <PaymentReceiptsCenter />;
       case 'sales':
         return <SalesHistoryView />;
       case 'settings':
-        return <SettingsView />;
+        return <SettingsManagement />;
       case 'purchases':
         return <PurchasesManagement />;
       case 'suppliers':
         return <SuppliersManagement />;
       case 'returns':
         return <ReturnsManagement />;
+      case 'accounts':
+        return <AccountsManagement />;
       case 'expenses':
         return <ExpensesManagement />;
       case 'cash':
         return <CashDrawerManagement />;
+      case 'employees':
+        return <EmployeeManagement />;
       case 'quotations':
         return <QuotationsManagement />;
       case 'reports':

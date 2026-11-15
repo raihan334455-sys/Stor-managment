@@ -16,6 +16,7 @@ import {
   Cloud,
   CloudUpload,
   ArrowRight,
+  Clock,
 } from 'lucide-react';
 import { DatabaseBackup as IDatabaseBackup } from '../../types';
 
@@ -33,6 +34,8 @@ export const BackupManagement: React.FC = () => {
     wipeAllData,
     resetToDemoData,
     activeUser,
+    store,
+    updateStore,
     checkPermission,
     setActiveTab,
   } = useApp();
@@ -66,6 +69,8 @@ export const BackupManagement: React.FC = () => {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetInput, setResetInput] = useState('');
   const [resetActionType, setResetActionType] = useState<'clear_history' | 'wipe_all' | 'reset_demo'>('clear_history');
+  const [autoSnapshots, setAutoSnapshots] = useState(() => DBStorage.getAutoBackupSnapshots());
+  const [confirmRestoreSnapId, setConfirmRestoreSnapId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -151,6 +156,48 @@ export const BackupManagement: React.FC = () => {
     };
 
     reader.readAsText(file);
+  };
+
+  const handleTriggerAutoSnapshot = () => {
+    const snap = DBStorage.saveAutoBackupSnapshot('manual');
+    setAutoSnapshots(DBStorage.getAutoBackupSnapshots());
+    refreshData();
+    addAuditLog('AUTO_BACKUP_SNAPSHOT', 'Backup', `Saved encrypted automatic local backup snapshot (${snap.timestamp})`);
+    setMessage({
+      type: 'success',
+      text: 'Automatic encrypted local backup snapshot saved!',
+    });
+    setTimeout(() => setMessage(null), 4000);
+  };
+
+  const handleDownloadSnapshot = (snapData: IDatabaseBackup, ts: string) => {
+    const jsonStr = JSON.stringify(snapData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pos_auto_backup_${ts.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestoreAutoSnapshot = (snapId: string) => {
+    const target = autoSnapshots.find((s) => s.id === snapId);
+    if (!target) return;
+    const success = DBStorage.restoreFullBackup(target.data);
+    if (success) {
+      refreshData();
+      setAutoSnapshots(DBStorage.getAutoBackupSnapshots());
+      setConfirmRestoreSnapId(null);
+      addAuditLog('BACKUP_RESTORED', 'Backup', `Restored database from automatic snapshot (${target.timestamp})`);
+      setMessage({
+        type: 'success',
+        text: `Automatic backup snapshot (${new Date(target.timestamp).toLocaleString()}) restored successfully!`,
+      });
+      setTimeout(() => setMessage(null), 5000);
+    }
   };
 
 
@@ -297,6 +344,135 @@ export const BackupManagement: React.FC = () => {
               <span>Select & Restore Backup File</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Automatic Scheduled Local Backup */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Automatic Local Backup (অটোমেটিক ব্যাকআপ)</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Automatically saves encrypted local recovery snapshots (up to 5 latest versions) on schedule.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+              <input
+                type="checkbox"
+                checked={store.auto_backup_enabled !== false}
+                onChange={(e) =>
+                  updateStore({
+                    ...store,
+                    auto_backup_enabled: e.target.checked,
+                    updated_at: new Date().toISOString(),
+                  })
+                }
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>Auto Backup {store.auto_backup_enabled !== false ? 'ON' : 'OFF'}</span>
+            </label>
+
+            <select
+              value={store.auto_backup_interval_hours || 24}
+              onChange={(e) =>
+                updateStore({
+                  ...store,
+                  auto_backup_interval_hours: Number(e.target.value) || 24,
+                  updated_at: new Date().toISOString(),
+                })
+              }
+              disabled={store.auto_backup_enabled === false}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            >
+              <option value={6}>Every 6 Hours</option>
+              <option value={12}>Every 12 Hours</option>
+              <option value={24}>Daily (24 Hours)</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={handleTriggerAutoSnapshot}
+              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Save Snapshot Now</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+            <span>Saved Automatic Snapshots ({autoSnapshots.length}/5)</span>
+            {store.last_auto_backup_at && (
+              <span className="font-mono">
+                Last Auto-Backup: {new Date(store.last_auto_backup_at).toLocaleString()}
+              </span>
+            )}
+          </div>
+
+          {autoSnapshots.length === 0 ? (
+            <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
+              No automatic snapshots saved yet. Click &ldquo;Save Snapshot Now&rdquo; or keep Auto Backup enabled.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+              {autoSnapshots.map((snap) => (
+                <div key={snap.id} className="p-3 bg-white hover:bg-slate-50 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div>
+                    <div className="font-semibold text-slate-800 font-mono">
+                      {new Date(snap.timestamp).toLocaleString()}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Trigger: {snap.trigger === 'manual' ? 'Manual Snapshot' : 'Scheduled Auto-Backup'} · {snap.data.products?.length || 0} Products · {snap.data.sales?.length || 0} Sales
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadSnapshot(snap.data, snap.timestamp)}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-[11px] flex items-center gap-1 cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download</span>
+                    </button>
+                    {confirmRestoreSnapId === snap.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreAutoSnapshot(snap.id)}
+                          className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          Confirm Restore
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRestoreSnapId(null)}
+                          className="px-2 py-1 rounded-lg border border-slate-200 text-slate-600 text-[11px] cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRestoreSnapId(snap.id)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-semibold text-[11px] cursor-pointer"
+                      >
+                        Restore
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

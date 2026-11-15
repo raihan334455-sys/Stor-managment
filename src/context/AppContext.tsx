@@ -24,8 +24,25 @@ import {
   SplitPaymentDetail,
   PermissionKey,
   DueAlertChannel,
+  Brand,
+  GenericItem,
+  PharmaCompany,
+  UnitDefinition,
+  PurchaseReturn,
+  PurchaseReturnItem,
+  StockTransfer,
+  AccountIncome,
+  CashFlowEntry,
+  FinancialAccount,
+  FinancialAccountTx,
+  Employee,
+  AttendanceRecord,
+  AttendanceStatus,
+  SalaryPayment,
+  BatchLot,
 } from '../types';
 import { DBStorage } from '../db/storage';
+import { getVariantBaseUnit } from '../utils/packaging';
 import { setCachedToken } from '../services/googleDriveAuth';
 import {
   canAccessTab,
@@ -69,10 +86,23 @@ interface AppContextType {
   quotations: Quotation[];
   heldCarts: HeldCart[];
   setHeldCarts: React.Dispatch<React.SetStateAction<HeldCart[]>>;
+  brands: Brand[];
+  generics: GenericItem[];
+  pharmaCompanies: PharmaCompany[];
+  units: UnitDefinition[];
+  purchaseReturns: PurchaseReturn[];
+  stockTransfers: StockTransfer[];
+  incomes: AccountIncome[];
+  cashFlows: CashFlowEntry[];
+  financialAccounts: FinancialAccount[];
+  financialAccountTxs: FinancialAccountTx[];
+  employees: Employee[];
+  attendance: AttendanceRecord[];
+  salaries: SalaryPayment[];
 
   // Print state
-  printableReceipt: { type: 'sale' | 'due' | 'quotation'; data: any } | null;
-  setPrintableReceipt: (receipt: { type: 'sale' | 'due' | 'quotation'; data: any } | null) => void;
+  printableReceipt: { type: 'sale' | 'due' | 'supplier_due' | 'quotation'; data: any } | null;
+  setPrintableReceipt: (receipt: { type: 'sale' | 'due' | 'supplier_due' | 'quotation'; data: any } | null) => void;
 
   // Actions
   completeSale: (saleData: {
@@ -120,6 +150,7 @@ interface AppContextType {
   voidSale: (sale_id: string, reason: string) => boolean;
 
   saveProduct: (product: Product) => void;
+  saveProductsBulk: (items: Product[]) => void;
   archiveProduct: (product_id: string) => void;
 
   saveCustomer: (customer: Customer) => Customer;
@@ -128,6 +159,75 @@ interface AppContextType {
   saveUser: (user: User, plainPinToSet?: string) => Promise<void>;
   deleteUser: (userId: string) => void;
   saveCategory: (category: Category) => void;
+  deleteCategory: (categoryId: string) => void;
+
+  // Catalog Master Management (Brands, Generics, Companies, Units)
+  saveBrand: (brand: Brand) => void;
+  deleteBrand: (id: string) => void;
+  saveGeneric: (item: GenericItem) => void;
+  deleteGeneric: (id: string) => void;
+  savePharmaCompany: (company: PharmaCompany) => void;
+  deletePharmaCompany: (id: string) => void;
+  saveUnit: (unit: UnitDefinition) => void;
+  deleteUnit: (id: string) => void;
+
+  // Purchase Return & Inventory Movements
+  processPurchaseReturn: (data: {
+    purchase_number?: string;
+    supplier_id: string;
+    items: PurchaseReturnItem[];
+    refund_mode: 'cash' | 'bank' | 'adjust_due';
+    reason?: string;
+  }) => PurchaseReturn | null;
+
+  recordStockIn: (variant_id: string, qty: number, reason: string, reference_no?: string) => void;
+  recordStockOut: (variant_id: string, qty: number, reason: string, reference_no?: string) => void;
+  recordDamageStock: (variant_id: string, qty: number, reason: string) => void;
+  recordStockTransfer: (data: {
+    variant_id: string;
+    quantity: number;
+    from_location: string;
+    to_location: string;
+    notes?: string;
+  }) => StockTransfer | null;
+
+  // Accounts Management
+  addIncome: (data: Omit<AccountIncome, 'id' | 'income_number' | 'created_at' | 'created_by' | 'branch_id'>) => AccountIncome;
+  deleteIncome: (id: string) => void;
+  addCashFlow: (data: Omit<CashFlowEntry, 'id' | 'entry_number' | 'created_at' | 'created_by' | 'branch_id'>) => CashFlowEntry;
+  saveFinancialAccount: (account: FinancialAccount) => void;
+  recordFinancialAccountTx: (data: {
+    account_id: string;
+    tx_type: 'deposit' | 'withdraw';
+    amount: number;
+    reference?: string;
+    notes?: string;
+    date: string;
+    time: string;
+  }) => FinancialAccountTx | null;
+
+  // Employee Management
+  saveEmployee: (employee: Employee) => void;
+  markAttendance: (data: {
+    employee_id: string;
+    date: string;
+    status: AttendanceStatus;
+    check_in?: string;
+    check_out?: string;
+    notes?: string;
+  }) => void;
+  payEmployeeSalary: (data: {
+    employee_id: string;
+    month_year: string;
+    basic_salary: number;
+    bonus: number;
+    deduction: number;
+    advance_adjusted: number;
+    payment_method: PaymentMethodType;
+    payment_date: string;
+    notes?: string;
+    log_as_expense?: boolean;
+  }) => SalaryPayment | null;
 
   addAuditLog: (
     action: string,
@@ -227,9 +327,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [returns, setReturns] = useState<SaleReturn[]>(DBStorage.getReturns());
   const [quotations, setQuotations] = useState<Quotation[]>(DBStorage.getQuotations());
   const [heldCarts, setHeldCarts] = useState<HeldCart[]>([]);
+  const [brands, setBrands] = useState<Brand[]>(DBStorage.getBrands());
+  const [generics, setGenerics] = useState<GenericItem[]>(DBStorage.getGenerics());
+  const [pharmaCompanies, setPharmaCompanies] = useState<PharmaCompany[]>(DBStorage.getPharmaCompanies());
+  const [units, setUnits] = useState<UnitDefinition[]>(DBStorage.getUnits());
+  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(DBStorage.getPurchaseReturns());
+  const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>(DBStorage.getStockTransfers());
+  const [incomes, setIncomes] = useState<AccountIncome[]>(DBStorage.getIncomes());
+  const [cashFlows, setCashFlows] = useState<CashFlowEntry[]>(DBStorage.getCashFlows());
+  const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>(DBStorage.getFinancialAccounts());
+  const [financialAccountTxs, setFinancialAccountTxs] = useState<FinancialAccountTx[]>(DBStorage.getFinancialAccountTxs());
+  const [employees, setEmployees] = useState<Employee[]>(DBStorage.getEmployees());
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(DBStorage.getAttendance());
+  const [salaries, setSalaries] = useState<SalaryPayment[]>(DBStorage.getSalaries());
 
   const [printableReceipt, setPrintableReceipt] = useState<{
-    type: 'sale' | 'due' | 'quotation';
+    type: 'sale' | 'due' | 'supplier_due' | 'quotation';
     data: any;
   } | null>(null);
 
@@ -238,17 +351,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setUsers(DBStorage.getUsers());
     setProducts(DBStorage.getProducts());
     setCategories(DBStorage.getCategories());
+    setBrands(DBStorage.getBrands());
+    setGenerics(DBStorage.getGenerics());
+    setPharmaCompanies(DBStorage.getPharmaCompanies());
+    setUnits(DBStorage.getUnits());
     setCustomers(DBStorage.getCustomers());
     setSuppliers(DBStorage.getSuppliers());
     setSales(DBStorage.getSales());
     setCustomerDues(DBStorage.getCustomerDues());
     setSupplierDues(DBStorage.getSupplierDues());
     setPurchases(DBStorage.getPurchases());
+    setPurchaseReturns(DBStorage.getPurchaseReturns());
     setExpenses(DBStorage.getExpenses());
     setRecurringExpenses(DBStorage.getRecurringExpenses());
+    setIncomes(DBStorage.getIncomes());
+    setCashFlows(DBStorage.getCashFlows());
+    setFinancialAccounts(DBStorage.getFinancialAccounts());
+    setFinancialAccountTxs(DBStorage.getFinancialAccountTxs());
+    setEmployees(DBStorage.getEmployees());
+    setAttendance(DBStorage.getAttendance());
+    setSalaries(DBStorage.getSalaries());
     setCashSessions(DBStorage.getCashSessions());
     setAuditLogs(DBStorage.getAuditLogs());
     setStockTransactions(DBStorage.getStockTransactions());
+    setStockTransfers(DBStorage.getStockTransfers());
     setReturns(DBStorage.getReturns());
     setQuotations(DBStorage.getQuotations());
   };
@@ -329,6 +455,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [isAuthenticated]);
 
+  // Automatic Scheduled Backup Snapshot
+  useEffect(() => {
+    if (!isStorageReady || !isAuthenticated) return;
+    if (store.auto_backup_enabled === false) return;
+
+    const intervalHours = Math.max(1, Number(store.auto_backup_interval_hours || 24));
+    const intervalMs = intervalHours * 60 * 60 * 1000;
+
+    const checkAndRunBackup = () => {
+      const currentStore = DBStorage.getStore();
+      if (currentStore.auto_backup_enabled === false) return;
+      const lastTs = currentStore.last_auto_backup_at
+        ? new Date(currentStore.last_auto_backup_at).getTime()
+        : 0;
+      const existingSnapshots = DBStorage.getAutoBackupSnapshots();
+      if (!lastTs || Number.isNaN(lastTs) || Date.now() - lastTs >= intervalMs || existingSnapshots.length === 0) {
+        DBStorage.saveAutoBackupSnapshot('scheduled');
+        setStore(DBStorage.getStore());
+      }
+    };
+
+    checkAndRunBackup();
+    const timer = setInterval(checkAndRunBackup, 15 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [isStorageReady, isAuthenticated, store.auto_backup_enabled, store.auto_backup_interval_hours]);
+
   const updateStore = (settings: StoreSettings) => {
     if (!hasPermission(activeUser, 'settings_manage')) {
       addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked settings update by ${activeUser.name}`);
@@ -367,10 +519,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Generate unique invoice number
   const generateInvoiceNumber = (): string => {
+    const prefix = (store.invoice_prefix || 'INV').trim().toUpperCase() || 'INV';
     const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const todaysSales = sales.filter((s) => s.date === new Date().toISOString().slice(0, 10));
     const nextSeq = (todaysSales.length + 1).toString().padStart(4, '0');
-    return `INV-${todayStr}-${nextSeq}`;
+    return `${prefix}-${todayStr}-${nextSeq}`;
   };
 
   // Complete a Sale Transaction
@@ -437,10 +590,63 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (vIndex !== -1) {
           const variant = prod.variants[vIndex];
           const oldStock = variant.stock_quantity;
-          const newStock = Math.max(0, oldStock - item.quantity);
+          const factor = item.conversion_factor && item.conversion_factor > 0 ? item.conversion_factor : 1;
+          const deductBaseQty = Math.round((item.base_quantity ?? item.quantity * factor) * 1000) / 1000;
+          const baseUnit = item.base_unit || getVariantBaseUnit(variant);
+          const newStock = Math.max(0, Math.round((oldStock - deductBaseQty) * 1000) / 1000);
+
+          let updatedBatches = variant.batches ? variant.batches.map((b) => ({ ...b })) : undefined;
+          let resolvedBatchNo = item.batch_number;
+
+          if (updatedBatches && updatedBatches.length > 0) {
+            let remainingToDeduct = deductBaseQty;
+            // 1. Try matching explicit batch first
+            if (resolvedBatchNo) {
+              const bIdx = updatedBatches.findIndex(
+                (b) => b.batch_number.toLowerCase() === resolvedBatchNo!.toLowerCase() && b.stock_quantity > 0
+              );
+              if (bIdx !== -1) {
+                const take = Math.min(updatedBatches[bIdx].stock_quantity, remainingToDeduct);
+                updatedBatches[bIdx] = {
+                  ...updatedBatches[bIdx],
+                  stock_quantity: Math.max(0, Math.round((updatedBatches[bIdx].stock_quantity - take) * 1000) / 1000),
+                };
+                remainingToDeduct = Math.round((remainingToDeduct - take) * 1000) / 1000;
+              }
+            }
+            // 2. If any remainder, deduct FEFO (earliest expiry first) across non-empty batches
+            if (remainingToDeduct > 0.0001) {
+              const sortedIndexes = updatedBatches
+                .map((b, i) => ({ b, i }))
+                .filter(({ b }) => b.stock_quantity > 0)
+                .sort((a, b) => (a.b.expiry_date || '9999-12-31').localeCompare(b.b.expiry_date || '9999-12-31'))
+                .map(({ i }) => i);
+
+              for (const idx of sortedIndexes) {
+                if (remainingToDeduct <= 0.0001) break;
+                const take = Math.min(updatedBatches[idx].stock_quantity, remainingToDeduct);
+                if (!resolvedBatchNo) resolvedBatchNo = updatedBatches[idx].batch_number;
+                updatedBatches[idx] = {
+                  ...updatedBatches[idx],
+                  stock_quantity: Math.max(0, Math.round((updatedBatches[idx].stock_quantity - take) * 1000) / 1000),
+                };
+                remainingToDeduct = Math.round((remainingToDeduct - take) * 1000) / 1000;
+              }
+            }
+          }
+
+          const nextActiveBatch =
+            updatedBatches
+              ?.filter((b) => b.stock_quantity > 0)
+              .sort((a, b) => (a.expiry_date || '9999-12-31').localeCompare(b.expiry_date || '9999-12-31'))[0] ||
+            updatedBatches?.[0];
+
           prod.variants[vIndex] = {
             ...variant,
             stock_quantity: newStock,
+            batches: updatedBatches,
+            batch_number: nextActiveBatch?.batch_number ?? variant.batch_number,
+            expiry_date: nextActiveBatch?.expiry_date ?? variant.expiry_date,
             updated_at: now.toISOString(),
           };
 
@@ -451,13 +657,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             variant_id: variant.id,
             variant_name: variant.variant_name,
             transaction_type: 'sale',
-            quantity_change: -item.quantity,
+            quantity_change: -deductBaseQty,
             previous_stock: oldStock,
             new_stock: newStock,
+            batch_number: resolvedBatchNo || variant.batch_number,
+            base_unit: baseUnit,
             reference_no: invoiceNo,
             user_id: activeUser.id,
             user_name: activeUser.name,
-            reason: `POS Sale #${invoiceNo}`,
+            reason: `POS Sale #${invoiceNo} (${item.quantity} ${item.unit}${
+              factor !== 1 ? ` = ${deductBaseQty} ${baseUnit}` : ''
+            }${resolvedBatchNo ? ` · Batch ${resolvedBatchNo}` : ''})`,
             created_at: now.toISOString(),
             branch_id: store.branch_id,
           });
@@ -569,7 +779,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const customer = updatedCusts[cIndex];
     const oldDue = customer.total_due_amount;
-    const newDue = Math.max(0, oldDue - paid_amount);
+    const rawNewDue = Math.max(0, Math.round((oldDue - paid_amount) * 100) / 100);
+    const newDue = rawNewDue <= 0.01 ? 0 : rawNewDue;
 
     updatedCusts[cIndex] = {
       ...customer,
@@ -631,7 +842,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const supplier = updatedSups[sIdx];
     const oldDue = supplier.total_due;
-    const newDue = Math.max(0, oldDue - paid_amount);
+    const rawNewDue = Math.max(0, Math.round((oldDue - paid_amount) * 100) / 100);
+    const newDue = rawNewDue <= 0.01 ? 0 : rawNewDue;
 
     updatedSups[sIdx] = {
       ...supplier,
@@ -671,6 +883,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       `Paid ৳${paid_amount} to Supplier ${supplier.name}. Remaining Due: ৳${newDue}`
     );
 
+    setPrintableReceipt({ type: 'supplier_due', data: dueTx });
     return dueTx;
   };
 
@@ -702,12 +915,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (vIndex !== -1) {
           const variant = prod.variants[vIndex];
           const oldStock = variant.stock_quantity;
-          const newStock = oldStock + item.quantity;
+          const factor = item.conversion_factor && item.conversion_factor > 0 ? item.conversion_factor : 1;
+          const inwardBaseQty = Math.round((item.base_quantity ?? item.quantity * factor) * 1000) / 1000;
+          const baseUnit = item.base_unit || getVariantBaseUnit(variant);
+          const newStock = Math.round((oldStock + inwardBaseQty) * 1000) / 1000;
+
+          let nextBatches: BatchLot[] | undefined = variant.batches ? variant.batches.map((b) => ({ ...b })) : undefined;
+          if (item.batch_number) {
+            if (!nextBatches) {
+              nextBatches =
+                variant.batch_number && variant.stock_quantity > 0
+                  ? [
+                      {
+                        id: `batch_init_${variant.id}`,
+                        batch_number: variant.batch_number,
+                        mfg_date: variant.mfg_date,
+                        expiry_date: variant.expiry_date,
+                        stock_quantity: variant.stock_quantity,
+                        purchase_price: variant.purchase_price,
+                        supplier_id: variant.supplier_id,
+                      },
+                    ]
+                  : [];
+            }
+            const existingBIdx = nextBatches.findIndex(
+              (b) => b.batch_number.toLowerCase() === item.batch_number!.toLowerCase()
+            );
+            if (existingBIdx !== -1) {
+              nextBatches[existingBIdx] = {
+                ...nextBatches[existingBIdx],
+                stock_quantity: Math.round((nextBatches[existingBIdx].stock_quantity + inwardBaseQty) * 1000) / 1000,
+                expiry_date: item.expiry_date || nextBatches[existingBIdx].expiry_date,
+                mfg_date: item.mfg_date || nextBatches[existingBIdx].mfg_date,
+                purchase_price: item.purchase_price / factor,
+              };
+            } else {
+              nextBatches.push({
+                id: `batch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                batch_number: item.batch_number,
+                mfg_date: item.mfg_date,
+                expiry_date: item.expiry_date,
+                stock_quantity: inwardBaseQty,
+                purchase_price: item.purchase_price / factor,
+                supplier_id: purchaseData.supplier_id,
+                created_at: now.toISOString(),
+              });
+            }
+          }
 
           prod.variants[vIndex] = {
             ...variant,
             stock_quantity: newStock,
-            purchase_price: item.purchase_price,
+            purchase_price: factor === 1 ? item.purchase_price : variant.purchase_price,
+            batches: nextBatches,
+            batch_number: variant.batch_number || item.batch_number,
+            expiry_date: variant.expiry_date || item.expiry_date,
             updated_at: now.toISOString(),
           };
 
@@ -718,13 +980,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             variant_id: variant.id,
             variant_name: variant.variant_name,
             transaction_type: 'purchase',
-            quantity_change: item.quantity,
+            quantity_change: inwardBaseQty,
             previous_stock: oldStock,
             new_stock: newStock,
+            batch_number: item.batch_number,
+            base_unit: baseUnit,
             reference_no: purNo,
             user_id: activeUser.id,
             user_name: activeUser.name,
-            reason: `Purchase Entry #${purNo} from ${purchaseData.supplier_name}`,
+            reason: `Purchase Entry #${purNo} from ${purchaseData.supplier_name}${
+              item.batch_number ? ` (Batch ${item.batch_number})` : ''
+            }`,
             created_at: now.toISOString(),
             branch_id: store.branch_id,
           });
@@ -917,11 +1183,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (vIndex !== -1) {
           const variant = prod.variants[vIndex];
           const oldStock = variant.stock_quantity;
-          const newStock = oldStock + rItem.quantity;
+          const factor = saleItem.conversion_factor && saleItem.conversion_factor > 0 ? saleItem.conversion_factor : 1;
+          const restoreBaseQty = Math.round(rItem.quantity * factor * 1000) / 1000;
+          const newStock = Math.round((oldStock + restoreBaseQty) * 1000) / 1000;
+
+          let nextBatches = variant.batches ? variant.batches.map((b) => ({ ...b })) : undefined;
+          if (nextBatches && nextBatches.length > 0 && saleItem.batch_number) {
+            const bIdx = nextBatches.findIndex(
+              (b) => b.batch_number.toLowerCase() === saleItem.batch_number!.toLowerCase()
+            );
+            if (bIdx !== -1) {
+              nextBatches[bIdx] = {
+                ...nextBatches[bIdx],
+                stock_quantity: Math.round((nextBatches[bIdx].stock_quantity + restoreBaseQty) * 1000) / 1000,
+              };
+            }
+          }
 
           prod.variants[vIndex] = {
             ...variant,
             stock_quantity: newStock,
+            batches: nextBatches,
             updated_at: now.toISOString(),
           };
 
@@ -932,9 +1214,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             variant_id: variant.id,
             variant_name: variant.variant_name,
             transaction_type: 'customer_return',
-            quantity_change: rItem.quantity,
+            quantity_change: restoreBaseQty,
             previous_stock: oldStock,
             new_stock: newStock,
+            batch_number: saleItem.batch_number,
+            base_unit: saleItem.base_unit || getVariantBaseUnit(variant),
             reference_no: invoice_number,
             user_id: activeUser.id,
             user_name: activeUser.name,
@@ -1012,11 +1296,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (vIndex !== -1) {
           const variant = prod.variants[vIndex];
           const oldStock = variant.stock_quantity;
-          const newStock = oldStock + item.quantity;
+          const factor = item.conversion_factor && item.conversion_factor > 0 ? item.conversion_factor : 1;
+          const restoreBaseQty = Math.round((item.base_quantity ?? item.quantity * factor) * 1000) / 1000;
+          const newStock = Math.round((oldStock + restoreBaseQty) * 1000) / 1000;
+
+          let nextBatches = variant.batches ? variant.batches.map((b) => ({ ...b })) : undefined;
+          if (nextBatches && nextBatches.length > 0 && item.batch_number) {
+            const bIdx = nextBatches.findIndex(
+              (b) => b.batch_number.toLowerCase() === item.batch_number!.toLowerCase()
+            );
+            if (bIdx !== -1) {
+              nextBatches[bIdx] = {
+                ...nextBatches[bIdx],
+                stock_quantity: Math.round((nextBatches[bIdx].stock_quantity + restoreBaseQty) * 1000) / 1000,
+              };
+            }
+          }
 
           prod.variants[vIndex] = {
             ...variant,
             stock_quantity: newStock,
+            batches: nextBatches,
             updated_at: now.toISOString(),
           };
 
@@ -1027,9 +1327,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             variant_id: variant.id,
             variant_name: variant.variant_name,
             transaction_type: 'customer_return',
-            quantity_change: item.quantity,
+            quantity_change: restoreBaseQty,
             previous_stock: oldStock,
             new_stock: newStock,
+            batch_number: item.batch_number,
+            base_unit: item.base_unit || getVariantBaseUnit(variant),
             reference_no: sale.invoice_number,
             user_id: activeUser.id,
             user_name: activeUser.name,
@@ -1106,6 +1408,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setProducts(updated);
     DBStorage.saveProducts(updated);
     addAuditLog('PRODUCT_SAVED', 'Products', `Saved Product '${product.name}' with ${product.variants.length} variant(s)`);
+  };
+
+  // Atomic Bulk Save Products / Medicines (RBAC protected)
+  const saveProductsBulk = (items: Product[]) => {
+    if (items.length === 0) return;
+    if (!hasPermission(activeUser, 'product_manage')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked bulk product save by ${activeUser.name}`);
+      return;
+    }
+    setProducts((prev) => {
+      const next = [...prev];
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        const existingIdx = next.findIndex((p) => p.id === item.id);
+        if (existingIdx !== -1) {
+          next[existingIdx] = item;
+        } else {
+          next.unshift(item);
+        }
+      }
+      DBStorage.saveProducts(next);
+      return next;
+    });
+    addAuditLog(
+      'PRODUCT_BULK_SAVED',
+      'Products',
+      `Bulk saved ${items.length} product/medicine record(s)`
+    );
   };
 
   // Archive Product (RBAC protected)
@@ -1209,6 +1539,602 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     setCategories(updated);
     DBStorage.saveCategories(updated);
+  };
+
+  const deleteCategory = (categoryId: string) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const updated = categories.filter((c) => c.id !== categoryId);
+    setCategories(updated);
+    DBStorage.saveCategories(updated);
+  };
+
+  // Catalog Master Management
+  const saveBrand = (brand: Brand) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const idx = brands.findIndex((b) => b.id === brand.id);
+    const updated = idx !== -1 ? brands.map((b, i) => (i === idx ? brand : b)) : [brand, ...brands];
+    setBrands(updated);
+    DBStorage.saveBrands(updated);
+    addAuditLog('BRAND_SAVED', 'Products', `Saved brand '${brand.name}'`);
+  };
+
+  const deleteBrand = (id: string) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const updated = brands.filter((b) => b.id !== id);
+    setBrands(updated);
+    DBStorage.saveBrands(updated);
+  };
+
+  const saveGeneric = (item: GenericItem) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const idx = generics.findIndex((g) => g.id === item.id);
+    const updated = idx !== -1 ? generics.map((g, i) => (i === idx ? item : g)) : [item, ...generics];
+    setGenerics(updated);
+    DBStorage.saveGenerics(updated);
+    addAuditLog('GENERIC_SAVED', 'Products', `Saved medicine generic '${item.name}'`);
+  };
+
+  const deleteGeneric = (id: string) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const updated = generics.filter((g) => g.id !== id);
+    setGenerics(updated);
+    DBStorage.saveGenerics(updated);
+  };
+
+  const savePharmaCompany = (company: PharmaCompany) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const idx = pharmaCompanies.findIndex((c) => c.id === company.id);
+    const updated =
+      idx !== -1 ? pharmaCompanies.map((c, i) => (i === idx ? company : c)) : [company, ...pharmaCompanies];
+    setPharmaCompanies(updated);
+    DBStorage.savePharmaCompanies(updated);
+    addAuditLog('COMPANY_SAVED', 'Products', `Saved pharma company '${company.name}'`);
+  };
+
+  const deletePharmaCompany = (id: string) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const updated = pharmaCompanies.filter((c) => c.id !== id);
+    setPharmaCompanies(updated);
+    DBStorage.savePharmaCompanies(updated);
+  };
+
+  const saveUnit = (unit: UnitDefinition) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const idx = units.findIndex((u) => u.id === unit.id);
+    const updated = idx !== -1 ? units.map((u, i) => (i === idx ? unit : u)) : [...units, unit];
+    setUnits(updated);
+    DBStorage.saveUnits(updated);
+  };
+
+  const deleteUnit = (id: string) => {
+    if (!hasPermission(activeUser, 'product_manage')) return;
+    const updated = units.filter((u) => u.id !== id);
+    setUnits(updated);
+    DBStorage.saveUnits(updated);
+  };
+
+  // Purchase Return (deducts stock & adjusts supplier ledger)
+  const processPurchaseReturn = (data: {
+    purchase_number?: string;
+    supplier_id: string;
+    items: PurchaseReturnItem[];
+    refund_mode: 'cash' | 'bank' | 'adjust_due';
+    reason?: string;
+  }): PurchaseReturn | null => {
+    const supplier = suppliers.find((s) => s.id === data.supplier_id);
+    if (!supplier || data.items.length === 0) return null;
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 8);
+    const retNo = `PRET-${dateStr.replace(/-/g, '')}-${(purchaseReturns.length + 1).toString().padStart(3, '0')}`;
+    const totalRefund = data.items.reduce((sum, i) => sum + i.refund_amount, 0);
+
+    const currentProds = [...products];
+    const newStockTxs: StockTransaction[] = [];
+
+    data.items.forEach((rItem) => {
+      for (const prod of currentProds) {
+        const vIdx = prod.variants.findIndex((v) => v.id === rItem.variant_id);
+        if (vIdx !== -1) {
+          const variant = prod.variants[vIdx];
+          const oldStock = variant.stock_quantity;
+          const newStock = Math.max(0, oldStock - rItem.quantity);
+          prod.variants[vIdx] = {
+            ...variant,
+            stock_quantity: newStock,
+            updated_at: now.toISOString(),
+          };
+          newStockTxs.push({
+            id: `st_pret_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            product_id: prod.id,
+            product_name: prod.name,
+            variant_id: variant.id,
+            variant_name: variant.variant_name,
+            transaction_type: 'supplier_return',
+            quantity_change: -rItem.quantity,
+            previous_stock: oldStock,
+            new_stock: newStock,
+            reference_no: retNo,
+            user_id: activeUser.id,
+            user_name: activeUser.name,
+            reason: `Purchase Return #${retNo} to ${supplier.name}: ${rItem.reason}`,
+            created_at: now.toISOString(),
+            branch_id: store.branch_id,
+          });
+          break;
+        }
+      }
+    });
+
+    setProducts(currentProds);
+    DBStorage.saveProducts(currentProds);
+
+    const updatedStockTxs = [...newStockTxs, ...stockTransactions];
+    setStockTransactions(updatedStockTxs);
+    DBStorage.saveStockTransactions(updatedStockTxs);
+
+    if (data.refund_mode === 'adjust_due' && supplier.total_due > 0) {
+      const dueReduction = Math.min(supplier.total_due, totalRefund);
+      const newDue = Math.max(0, supplier.total_due - dueReduction);
+      const updatedSups = suppliers.map((s) =>
+        s.id === supplier.id ? { ...s, total_due: newDue, updated_at: now.toISOString() } : s
+      );
+      setSuppliers(updatedSups);
+      DBStorage.saveSuppliers(updatedSups);
+
+      const dueTx: SupplierDueTransaction = {
+        id: `sdt_ret_${Date.now()}`,
+        supplier_id: supplier.id,
+        supplier_name: supplier.name,
+        purchase_invoice: data.purchase_number || retNo,
+        type: 'due_payment',
+        date: dateStr,
+        time: timeStr,
+        description: `Purchase Return Adjustment #${retNo}`,
+        total_amount: supplier.total_due,
+        paid_amount: dueReduction,
+        due_amount: 0,
+        balance_after: newDue,
+        created_by: activeUser.name,
+        notes: data.reason,
+        sync_status: 'pending',
+        branch_id: store.branch_id,
+      };
+      const updatedSDues = [dueTx, ...supplierDues];
+      setSupplierDues(updatedSDues);
+      DBStorage.saveSupplierDues(updatedSDues);
+    }
+
+    const newRet: PurchaseReturn = {
+      id: `pret_${Date.now()}`,
+      return_number: retNo,
+      purchase_number: data.purchase_number,
+      supplier_id: supplier.id,
+      supplier_name: supplier.name,
+      items: data.items,
+      total_refund: totalRefund,
+      refund_mode: data.refund_mode,
+      reason: data.reason,
+      processed_by: activeUser.name,
+      date: dateStr,
+      time: timeStr,
+      created_at: now.toISOString(),
+      branch_id: store.branch_id,
+    };
+
+    const updatedPRets = [newRet, ...purchaseReturns];
+    setPurchaseReturns(updatedPRets);
+    DBStorage.savePurchaseReturns(updatedPRets);
+
+    addAuditLog(
+      'PURCHASE_RETURN',
+      'Purchase',
+      `Processed Purchase Return #${retNo} to ${supplier.name} for ৳${totalRefund}`
+    );
+    return newRet;
+  };
+
+  // Explicit Stock In / Stock Out / Damage / Transfer
+  const applyStockMovement = (
+    variant_id: string,
+    delta: number,
+    txType: StockTransaction['transaction_type'],
+    reason: string,
+    reference_no?: string
+  ) => {
+    if (!hasPermission(activeUser, 'inventory_adjust')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked stock movement (${txType}) by ${activeUser.name}`);
+      return;
+    }
+    const now = new Date();
+    const currentProds = [...products];
+    let foundProdId = '';
+    let foundProdName = '';
+    let foundVarName = '';
+    let oldStock = 0;
+    let newStock = 0;
+
+    for (const prod of currentProds) {
+      const vIdx = prod.variants.findIndex((v) => v.id === variant_id);
+      if (vIdx !== -1) {
+        const v = prod.variants[vIdx];
+        oldStock = v.stock_quantity;
+        newStock = Math.max(0, Math.round((oldStock + delta) * 1000) / 1000);
+        foundProdId = prod.id;
+        foundProdName = prod.name;
+        foundVarName = v.variant_name;
+        prod.variants[vIdx] = {
+          ...v,
+          stock_quantity: newStock,
+          updated_at: now.toISOString(),
+        };
+        break;
+      }
+    }
+    if (!foundProdId) return;
+
+    setProducts(currentProds);
+    DBStorage.saveProducts(currentProds);
+
+    const stockTx: StockTransaction = {
+      id: `st_${txType}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      product_id: foundProdId,
+      product_name: foundProdName,
+      variant_id,
+      variant_name: foundVarName,
+      transaction_type: txType,
+      quantity_change: newStock - oldStock,
+      previous_stock: oldStock,
+      new_stock: newStock,
+      reference_no,
+      user_id: activeUser.id,
+      user_name: activeUser.name,
+      reason,
+      created_at: now.toISOString(),
+      branch_id: store.branch_id,
+    };
+
+    const updatedStockTxs = [stockTx, ...stockTransactions];
+    setStockTransactions(updatedStockTxs);
+    DBStorage.saveStockTransactions(updatedStockTxs);
+
+    addAuditLog(
+      `STOCK_${txType.toUpperCase()}`,
+      'Inventory',
+      `${txType.toUpperCase()} for ${foundVarName}: ${oldStock} → ${newStock}. ${reason}`
+    );
+  };
+
+  const recordStockIn = (variant_id: string, qty: number, reason: string, reference_no?: string) => {
+    if (qty <= 0) return;
+    applyStockMovement(variant_id, Math.abs(qty), 'stock_in', reason || 'Manual Stock In', reference_no);
+  };
+
+  const recordStockOut = (variant_id: string, qty: number, reason: string, reference_no?: string) => {
+    if (qty <= 0) return;
+    applyStockMovement(variant_id, -Math.abs(qty), 'stock_out', reason || 'Manual Stock Out', reference_no);
+  };
+
+  const recordDamageStock = (variant_id: string, qty: number, reason: string) => {
+    if (qty <= 0) return;
+    applyStockMovement(variant_id, -Math.abs(qty), 'damage', reason || 'Damaged / Expired Write-off');
+  };
+
+  const recordStockTransfer = (data: {
+    variant_id: string;
+    quantity: number;
+    from_location: string;
+    to_location: string;
+    notes?: string;
+  }): StockTransfer | null => {
+    if (!hasPermission(activeUser, 'inventory_adjust') || data.quantity <= 0) return null;
+    let matchedProd: Product | undefined;
+    let matchedVar: ProductVariant | undefined;
+    for (const p of products) {
+      const v = p.variants.find((vr) => vr.id === data.variant_id);
+      if (v) {
+        matchedProd = p;
+        matchedVar = v;
+        break;
+      }
+    }
+    if (!matchedProd || !matchedVar) return null;
+
+    const now = new Date();
+    const trNo = `TRF-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${(stockTransfers.length + 1).toString().padStart(3, '0')}`;
+
+    const isExternalBranchOut =
+      data.to_location.toLowerCase().includes('branch') &&
+      !data.to_location.toLowerCase().includes('shelf') &&
+      !data.to_location.toLowerCase().includes('rack');
+
+    if (isExternalBranchOut) {
+      applyStockMovement(
+        matchedVar.id,
+        -Math.abs(data.quantity),
+        'transfer',
+        `Transferred ${data.quantity} ${matchedVar.unit} from ${data.from_location} → ${data.to_location}`,
+        trNo
+      );
+    } else {
+      const stockTx: StockTransaction = {
+        id: `st_trf_${Date.now()}`,
+        product_id: matchedProd.id,
+        product_name: matchedProd.name,
+        variant_id: matchedVar.id,
+        variant_name: matchedVar.variant_name,
+        transaction_type: 'transfer',
+        quantity_change: 0,
+        previous_stock: matchedVar.stock_quantity,
+        new_stock: matchedVar.stock_quantity,
+        reference_no: trNo,
+        user_id: activeUser.id,
+        user_name: activeUser.name,
+        reason: `Internal Transfer (${data.quantity} ${matchedVar.unit}): ${data.from_location} → ${data.to_location}`,
+        created_at: now.toISOString(),
+        branch_id: store.branch_id,
+      };
+      const updatedTxs = [stockTx, ...stockTransactions];
+      setStockTransactions(updatedTxs);
+      DBStorage.saveStockTransactions(updatedTxs);
+    }
+
+    const newTransfer: StockTransfer = {
+      id: `trf_${Date.now()}`,
+      transfer_number: trNo,
+      product_id: matchedProd.id,
+      product_name: matchedProd.name,
+      variant_id: matchedVar.id,
+      variant_name: matchedVar.variant_name,
+      quantity: data.quantity,
+      unit: matchedVar.unit,
+      from_location: data.from_location,
+      to_location: data.to_location,
+      notes: data.notes,
+      transferred_by: activeUser.name,
+      date: now.toISOString().slice(0, 10),
+      created_at: now.toISOString(),
+      branch_id: store.branch_id,
+    };
+
+    const updatedTransfers = [newTransfer, ...stockTransfers];
+    setStockTransfers(updatedTransfers);
+    DBStorage.saveStockTransfers(updatedTransfers);
+
+    addAuditLog(
+      'STOCK_TRANSFER',
+      'Inventory',
+      `Stock Transfer #${trNo}: ${data.quantity} ${matchedVar.unit} of ${matchedVar.variant_name} (${data.from_location} → ${data.to_location})`
+    );
+    return newTransfer;
+  };
+
+  // Accounts Management
+  const addIncome = (
+    data: Omit<AccountIncome, 'id' | 'income_number' | 'created_at' | 'created_by' | 'branch_id'>
+  ): AccountIncome => {
+    const now = new Date();
+    const incNo = `INC-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${(incomes.length + 1).toString().padStart(3, '0')}`;
+    const newInc: AccountIncome = {
+      ...data,
+      id: `inc_${Date.now()}`,
+      income_number: incNo,
+      created_by: activeUser.name,
+      created_at: now.toISOString(),
+      branch_id: store.branch_id,
+    };
+    const updated = [newInc, ...incomes];
+    setIncomes(updated);
+    DBStorage.saveIncomes(updated);
+    addAuditLog('INCOME_ADDED', 'Accounts', `Recorded Other Income #${incNo}: ${data.title} (৳${data.amount})`);
+    return newInc;
+  };
+
+  const deleteIncome = (id: string) => {
+    const updated = incomes.filter((i) => i.id !== id);
+    setIncomes(updated);
+    DBStorage.saveIncomes(updated);
+  };
+
+  const addCashFlow = (
+    data: Omit<CashFlowEntry, 'id' | 'entry_number' | 'created_at' | 'created_by' | 'branch_id'>
+  ): CashFlowEntry => {
+    const now = new Date();
+    const prefix = data.type === 'cash_in' ? 'CIN' : 'COUT';
+    const entryNo = `${prefix}-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${(cashFlows.length + 1).toString().padStart(3, '0')}`;
+    const entry: CashFlowEntry = {
+      ...data,
+      id: `cf_${Date.now()}`,
+      entry_number: entryNo,
+      created_by: activeUser.name,
+      created_at: now.toISOString(),
+      branch_id: store.branch_id,
+    };
+    const updated = [entry, ...cashFlows];
+    setCashFlows(updated);
+    DBStorage.saveCashFlows(updated);
+    addAuditLog(
+      data.type === 'cash_in' ? 'CASH_IN' : 'CASH_OUT',
+      'Accounts',
+      `${data.type === 'cash_in' ? 'Cash In' : 'Cash Out'} #${entryNo}: ${data.title} (৳${data.amount})`
+    );
+    return entry;
+  };
+
+  const saveFinancialAccount = (account: FinancialAccount) => {
+    const idx = financialAccounts.findIndex((a) => a.id === account.id);
+    const updated =
+      idx !== -1
+        ? financialAccounts.map((a, i) => (i === idx ? account : a))
+        : [account, ...financialAccounts];
+    setFinancialAccounts(updated);
+    DBStorage.saveFinancialAccounts(updated);
+    addAuditLog('ACCOUNT_SAVED', 'Accounts', `Saved ${account.account_type} account '${account.account_name}'`);
+  };
+
+  const recordFinancialAccountTx = (data: {
+    account_id: string;
+    tx_type: 'deposit' | 'withdraw';
+    amount: number;
+    reference?: string;
+    notes?: string;
+    date: string;
+    time: string;
+  }): FinancialAccountTx | null => {
+    const accIdx = financialAccounts.findIndex((a) => a.id === data.account_id);
+    if (accIdx === -1 || data.amount <= 0) return null;
+    const acc = financialAccounts[accIdx];
+    const now = new Date();
+    const nextBalance =
+      data.tx_type === 'deposit' ? acc.balance + data.amount : Math.max(0, acc.balance - data.amount);
+
+    const updatedAccounts = [...financialAccounts];
+    updatedAccounts[accIdx] = { ...acc, balance: nextBalance, updated_at: now.toISOString() };
+    setFinancialAccounts(updatedAccounts);
+    DBStorage.saveFinancialAccounts(updatedAccounts);
+
+    const tx: FinancialAccountTx = {
+      id: `fatx_${Date.now()}`,
+      account_id: acc.id,
+      account_name: `${acc.provider_name} — ${acc.account_name}`,
+      tx_type: data.tx_type,
+      amount: data.amount,
+      reference: data.reference,
+      notes: data.notes,
+      date: data.date,
+      time: data.time,
+      created_by: activeUser.name,
+      created_at: now.toISOString(),
+    };
+    const updatedTxs = [tx, ...financialAccountTxs];
+    setFinancialAccountTxs(updatedTxs);
+    DBStorage.saveFinancialAccountTxs(updatedTxs);
+    addAuditLog(
+      data.tx_type === 'deposit' ? 'ACCOUNT_DEPOSIT' : 'ACCOUNT_WITHDRAW',
+      'Accounts',
+      `${data.tx_type === 'deposit' ? 'Deposited' : 'Withdrew'} ৳${data.amount} (${acc.account_name})`
+    );
+    return tx;
+  };
+
+  // Employee Management
+  const saveEmployee = (employee: Employee) => {
+    const idx = employees.findIndex((e) => e.id === employee.id);
+    const updated =
+      idx !== -1 ? employees.map((e, i) => (i === idx ? employee : e)) : [employee, ...employees];
+    setEmployees(updated);
+    DBStorage.saveEmployees(updated);
+    addAuditLog('EMPLOYEE_SAVED', 'Employees', `Saved employee profile ${employee.name} (${employee.designation})`);
+  };
+
+  const markAttendance = (data: {
+    employee_id: string;
+    date: string;
+    status: AttendanceStatus;
+    check_in?: string;
+    check_out?: string;
+    notes?: string;
+  }) => {
+    const emp = employees.find((e) => e.id === data.employee_id);
+    if (!emp) return;
+    const now = new Date().toISOString();
+    const existingIdx = attendance.findIndex(
+      (a) => a.employee_id === data.employee_id && a.date === data.date
+    );
+    let updated: AttendanceRecord[];
+    if (existingIdx !== -1) {
+      updated = [...attendance];
+      updated[existingIdx] = {
+        ...updated[existingIdx],
+        status: data.status,
+        check_in: data.check_in ?? updated[existingIdx].check_in,
+        check_out: data.check_out ?? updated[existingIdx].check_out,
+        notes: data.notes ?? updated[existingIdx].notes,
+        marked_by: activeUser.name,
+        updated_at: now,
+      };
+    } else {
+      const rec: AttendanceRecord = {
+        id: `att_${data.employee_id}_${data.date}`,
+        employee_id: emp.id,
+        employee_name: emp.name,
+        date: data.date,
+        status: data.status,
+        check_in: data.check_in,
+        check_out: data.check_out,
+        notes: data.notes,
+        marked_by: activeUser.name,
+        updated_at: now,
+      };
+      updated = [rec, ...attendance];
+    }
+    setAttendance(updated);
+    DBStorage.saveAttendance(updated);
+  };
+
+  const payEmployeeSalary = (data: {
+    employee_id: string;
+    month_year: string;
+    basic_salary: number;
+    bonus: number;
+    deduction: number;
+    advance_adjusted: number;
+    payment_method: PaymentMethodType;
+    payment_date: string;
+    notes?: string;
+    log_as_expense?: boolean;
+  }): SalaryPayment | null => {
+    const emp = employees.find((e) => e.id === data.employee_id);
+    if (!emp) return null;
+    const now = new Date();
+    const netPaid = Math.max(0, data.basic_salary + data.bonus - data.deduction - data.advance_adjusted);
+    const vNo = `SAL-${data.month_year.replace('-', '')}-${(salaries.length + 1).toString().padStart(3, '0')}`;
+    const payment: SalaryPayment = {
+      id: `sal_${Date.now()}`,
+      voucher_number: vNo,
+      employee_id: emp.id,
+      employee_name: emp.name,
+      month_year: data.month_year,
+      basic_salary: data.basic_salary,
+      bonus: data.bonus,
+      deduction: data.deduction,
+      advance_adjusted: data.advance_adjusted,
+      net_paid: netPaid,
+      payment_method: data.payment_method,
+      payment_date: data.payment_date,
+      notes: data.notes,
+      paid_by: activeUser.name,
+      created_at: now.toISOString(),
+    };
+    const updated = [payment, ...salaries];
+    setSalaries(updated);
+    DBStorage.saveSalaries(updated);
+
+    if (data.log_as_expense && netPaid > 0) {
+      addExpense({
+        title: `Salary Payment - ${emp.name} (${data.month_year})`,
+        category_id: 'cat_salary',
+        category_name: 'Employee Salary',
+        amount: netPaid,
+        date: data.payment_date,
+        time: now.toTimeString().slice(0, 8),
+        payment_method: data.payment_method,
+        status: 'paid',
+        voucher_number: vNo,
+        service_provider: emp.name,
+        notes: data.notes,
+        created_by: activeUser.name,
+        branch_id: store.branch_id,
+      });
+    }
+
+    addAuditLog(
+      'SALARY_PAID',
+      'Employees',
+      `Paid Salary #${vNo} to ${emp.name} (${data.month_year}): Net ৳${netPaid}`
+    );
+    return payment;
   };
 
   // Save User (RBAC protected + PBKDF2 hash enforcement)
@@ -1492,6 +2418,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         quotations,
         heldCarts,
         setHeldCarts,
+        brands,
+        generics,
+        pharmaCompanies,
+        units,
+        purchaseReturns,
+        stockTransfers,
+        incomes,
+        cashFlows,
+        financialAccounts,
+        financialAccountTxs,
+        employees,
+        attendance,
+        salaries,
         printableReceipt,
         setPrintableReceipt,
         completeSale,
@@ -1503,6 +2442,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         processReturn,
         voidSale,
         saveProduct,
+        saveProductsBulk,
         archiveProduct,
         saveCustomer,
         logDueAlert,
@@ -1510,6 +2450,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         saveUser,
         deleteUser,
         saveCategory,
+        deleteCategory,
+        saveBrand,
+        deleteBrand,
+        saveGeneric,
+        deleteGeneric,
+        savePharmaCompany,
+        deletePharmaCompany,
+        saveUnit,
+        deleteUnit,
+        processPurchaseReturn,
+        recordStockIn,
+        recordStockOut,
+        recordDamageStock,
+        recordStockTransfer,
+        addIncome,
+        deleteIncome,
+        addCashFlow,
+        saveFinancialAccount,
+        recordFinancialAccountTx,
+        saveEmployee,
+        markAttendance,
+        payEmployeeSalary,
         addAuditLog,
         refreshData,
         isAuthenticated,

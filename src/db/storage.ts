@@ -8,15 +8,28 @@ import {
   Supplier,
   SupplierDueTransaction,
   Purchase,
+  PurchaseReturn,
   Sale,
   Expense,
   RecurringExpense,
   CashSession,
   AuditLog,
   StockTransaction,
+  StockTransfer,
   SaleReturn,
   Quotation,
   DatabaseBackup,
+  Brand,
+  GenericItem,
+  PharmaCompany,
+  UnitDefinition,
+  AccountIncome,
+  CashFlowEntry,
+  FinancialAccount,
+  FinancialAccountTx,
+  Employee,
+  AttendanceRecord,
+  SalaryPayment,
 } from '../types';
 
 import {
@@ -35,6 +48,12 @@ import {
   INITIAL_CASH_SESSION,
   INITIAL_AUDIT_LOGS,
   INITIAL_STOCK_TRANSACTIONS,
+  INITIAL_BRANDS,
+  INITIAL_GENERICS,
+  INITIAL_PHARMA_COMPANIES,
+  INITIAL_UNITS,
+  INITIAL_FINANCIAL_ACCOUNTS,
+  INITIAL_EMPLOYEES,
 } from './initialData';
 
 import {
@@ -53,18 +72,31 @@ const KEYS = {
   STORE: 'pos_store_settings',
   USERS: 'pos_users',
   CATEGORIES: 'pos_categories',
+  BRANDS: 'pos_brands',
+  GENERICS: 'pos_generics',
+  PHARMA_COMPANIES: 'pos_pharma_companies',
+  UNITS: 'pos_units',
   PRODUCTS: 'pos_products',
   CUSTOMERS: 'pos_customers',
   CUSTOMER_DUES: 'pos_customer_dues',
   SUPPLIERS: 'pos_suppliers',
   SUPPLIER_DUES: 'pos_supplier_dues',
   PURCHASES: 'pos_purchases',
+  PURCHASE_RETURNS: 'pos_purchase_returns',
   SALES: 'pos_sales',
   EXPENSES: 'pos_expenses',
   RECURRING_EXPENSES: 'pos_recurring_expenses',
+  INCOMES: 'pos_incomes',
+  CASH_FLOWS: 'pos_cash_flows',
+  FINANCIAL_ACCOUNTS: 'pos_financial_accounts',
+  FINANCIAL_ACCOUNT_TXS: 'pos_financial_account_txs',
+  EMPLOYEES: 'pos_employees',
+  ATTENDANCE: 'pos_attendance',
+  SALARIES: 'pos_salaries',
   CASH_SESSIONS: 'pos_cash_sessions',
   AUDIT_LOGS: 'pos_audit_logs',
   STOCK_TRANSACTIONS: 'pos_stock_transactions',
+  STOCK_TRANSFERS: 'pos_stock_transfers',
   RETURNS: 'pos_returns',
   QUOTATIONS: 'pos_quotations',
   BACKUP_HISTORY: 'pos_backup_snapshots',
@@ -215,20 +247,34 @@ export class DBStorage {
       hydrateKey(KEYS.STORE, INITIAL_STORE),
       hydrateKey(KEYS.USERS, INITIAL_USERS),
       hydrateKey(KEYS.CATEGORIES, INITIAL_CATEGORIES),
+      hydrateKey(KEYS.BRANDS, INITIAL_BRANDS),
+      hydrateKey(KEYS.GENERICS, INITIAL_GENERICS),
+      hydrateKey(KEYS.PHARMA_COMPANIES, INITIAL_PHARMA_COMPANIES),
+      hydrateKey(KEYS.UNITS, INITIAL_UNITS),
       hydrateKey(KEYS.PRODUCTS, INITIAL_PRODUCTS),
       hydrateKey(KEYS.CUSTOMERS, INITIAL_CUSTOMERS),
       hydrateKey(KEYS.CUSTOMER_DUES, INITIAL_CUSTOMER_DUES),
       hydrateKey(KEYS.SUPPLIERS, INITIAL_SUPPLIERS),
       hydrateKey(KEYS.SUPPLIER_DUES, INITIAL_SUPPLIER_DUES),
       hydrateKey(KEYS.PURCHASES, INITIAL_PURCHASES),
+      hydrateKey(KEYS.PURCHASE_RETURNS, [] as PurchaseReturn[]),
       hydrateKey(KEYS.SALES, INITIAL_SALES),
       hydrateKey(KEYS.EXPENSES, INITIAL_EXPENSES),
       hydrateKey(KEYS.RECURRING_EXPENSES, INITIAL_RECURRING_EXPENSES),
+      hydrateKey(KEYS.INCOMES, [] as AccountIncome[]),
+      hydrateKey(KEYS.CASH_FLOWS, [] as CashFlowEntry[]),
+      hydrateKey(KEYS.FINANCIAL_ACCOUNTS, INITIAL_FINANCIAL_ACCOUNTS),
+      hydrateKey(KEYS.FINANCIAL_ACCOUNT_TXS, [] as FinancialAccountTx[]),
+      hydrateKey(KEYS.EMPLOYEES, INITIAL_EMPLOYEES),
+      hydrateKey(KEYS.ATTENDANCE, [] as AttendanceRecord[]),
+      hydrateKey(KEYS.SALARIES, [] as SalaryPayment[]),
       hydrateKey(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]),
       hydrateKey(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS),
       hydrateKey(KEYS.STOCK_TRANSACTIONS, INITIAL_STOCK_TRANSACTIONS),
+      hydrateKey(KEYS.STOCK_TRANSFERS, [] as StockTransfer[]),
       hydrateKey(KEYS.RETURNS, [] as SaleReturn[]),
       hydrateKey(KEYS.QUOTATIONS, [] as Quotation[]),
+      hydrateKey(KEYS.BACKUP_HISTORY, [] as { id: string; timestamp: string; trigger: string; data: DatabaseBackup }[]),
     ]);
 
     // Ensure all stored users have PBKDF2-SHA256 PIN hashes & valid directory MAC
@@ -254,7 +300,14 @@ export class DBStorage {
   static getStore(): StoreSettings {
     const s = getItem(KEYS.STORE, INITIAL_STORE);
     let updated = false;
-    const next = { ...s };
+    const next: StoreSettings = {
+      ...INITIAL_STORE,
+      ...s,
+      enabled_payment_methods: {
+        ...INITIAL_STORE.enabled_payment_methods!,
+        ...(s.enabled_payment_methods || {}),
+      },
+    };
     if (next.seller_name && next.seller_name.includes('Rafiqul')) {
       next.seller_name = 'Md. Raihan (Owner)';
       updated = true;
@@ -262,6 +315,28 @@ export class DBStorage {
     if (next.demo_mode_enabled === undefined) {
       next.demo_mode_enabled = true;
       updated = true;
+    }
+    if (next.module_medicine_enabled === undefined) {
+      next.module_medicine_enabled = true;
+      updated = true;
+    }
+    if (next.module_general_product_enabled === undefined) {
+      next.module_general_product_enabled = true;
+      updated = true;
+    }
+    if (next.auto_backup_enabled === undefined) {
+      next.auto_backup_enabled = true;
+      updated = true;
+    }
+    if (next.auto_backup_interval_hours === undefined) {
+      next.auto_backup_interval_hours = 24;
+      updated = true;
+    }
+    if (!next.store_mobile && next.store_phone) {
+      next.store_mobile = next.store_phone;
+    }
+    if (!next.receipt_footer_note && next.receipt_footer) {
+      next.receipt_footer_note = next.receipt_footer;
     }
     if (updated) {
       this.saveStore(next);
@@ -468,29 +543,180 @@ export class DBStorage {
     setItem(KEYS.AUDIT_LOGS, logs);
   }
 
+  // Brands
+  static getBrands(): Brand[] {
+    return getItem(KEYS.BRANDS, INITIAL_BRANDS);
+  }
+  static saveBrands(brands: Brand[]): void {
+    setItem(KEYS.BRANDS, brands);
+  }
+
+  // Medicine Generics
+  static getGenerics(): GenericItem[] {
+    return getItem(KEYS.GENERICS, INITIAL_GENERICS);
+  }
+  static saveGenerics(generics: GenericItem[]): void {
+    setItem(KEYS.GENERICS, generics);
+  }
+
+  // Pharma Companies
+  static getPharmaCompanies(): PharmaCompany[] {
+    return getItem(KEYS.PHARMA_COMPANIES, INITIAL_PHARMA_COMPANIES);
+  }
+  static savePharmaCompanies(companies: PharmaCompany[]): void {
+    setItem(KEYS.PHARMA_COMPANIES, companies);
+  }
+
+  // Units
+  static getUnits(): UnitDefinition[] {
+    return getItem(KEYS.UNITS, INITIAL_UNITS);
+  }
+  static saveUnits(units: UnitDefinition[]): void {
+    setItem(KEYS.UNITS, units);
+  }
+
+  // Purchase Returns
+  static getPurchaseReturns(): PurchaseReturn[] {
+    return getItem(KEYS.PURCHASE_RETURNS, []);
+  }
+  static savePurchaseReturns(returnsList: PurchaseReturn[]): void {
+    setItem(KEYS.PURCHASE_RETURNS, returnsList);
+  }
+
+  // Stock Transfers
+  static getStockTransfers(): StockTransfer[] {
+    return getItem(KEYS.STOCK_TRANSFERS, []);
+  }
+  static saveStockTransfers(transfers: StockTransfer[]): void {
+    setItem(KEYS.STOCK_TRANSFERS, transfers);
+  }
+
+  // Account Incomes
+  static getIncomes(): AccountIncome[] {
+    return getItem(KEYS.INCOMES, []);
+  }
+  static saveIncomes(incomes: AccountIncome[]): void {
+    setItem(KEYS.INCOMES, incomes);
+  }
+
+  // Cash In / Out Entries
+  static getCashFlows(): CashFlowEntry[] {
+    return getItem(KEYS.CASH_FLOWS, []);
+  }
+  static saveCashFlows(flows: CashFlowEntry[]): void {
+    setItem(KEYS.CASH_FLOWS, flows);
+  }
+
+  // Bank & Mobile Banking Accounts
+  static getFinancialAccounts(): FinancialAccount[] {
+    return getItem(KEYS.FINANCIAL_ACCOUNTS, INITIAL_FINANCIAL_ACCOUNTS);
+  }
+  static saveFinancialAccounts(accounts: FinancialAccount[]): void {
+    setItem(KEYS.FINANCIAL_ACCOUNTS, accounts);
+  }
+
+  static getFinancialAccountTxs(): FinancialAccountTx[] {
+    return getItem(KEYS.FINANCIAL_ACCOUNT_TXS, []);
+  }
+  static saveFinancialAccountTxs(txs: FinancialAccountTx[]): void {
+    setItem(KEYS.FINANCIAL_ACCOUNT_TXS, txs);
+  }
+
+  // Employees, Attendance & Salaries
+  static getEmployees(): Employee[] {
+    return getItem(KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
+  }
+  static saveEmployees(employees: Employee[]): void {
+    setItem(KEYS.EMPLOYEES, employees);
+  }
+
+  static getAttendance(): AttendanceRecord[] {
+    return getItem(KEYS.ATTENDANCE, []);
+  }
+  static saveAttendance(records: AttendanceRecord[]): void {
+    setItem(KEYS.ATTENDANCE, records);
+  }
+
+  static getSalaries(): SalaryPayment[] {
+    return getItem(KEYS.SALARIES, []);
+  }
+  static saveSalaries(salaries: SalaryPayment[]): void {
+    setItem(KEYS.SALARIES, salaries);
+  }
+
   // Export Complete Backup JSON Snapshot (PINs are PBKDF2-hashed; never plaintext)
   static exportFullBackup(): DatabaseBackup {
     return {
-      version: '1.1.0',
+      version: '1.2.0',
       timestamp: new Date().toISOString(),
       store: this.getStore(),
       users: this.getUsers(),
       categories: this.getCategories(),
+      brands: this.getBrands(),
+      generics: this.getGenerics(),
+      pharma_companies: this.getPharmaCompanies(),
+      units: this.getUnits(),
       products: this.getProducts(),
       customers: this.getCustomers(),
       customer_dues: this.getCustomerDues(),
       suppliers: this.getSuppliers(),
       supplier_dues: this.getSupplierDues(),
       purchases: this.getPurchases(),
+      purchase_returns: this.getPurchaseReturns(),
       sales: this.getSales(),
       stock_transactions: this.getStockTransactions(),
+      stock_transfers: this.getStockTransfers(),
       returns: this.getReturns(),
       expenses: this.getExpenses(),
       recurring_expenses: this.getRecurringExpenses(),
+      incomes: this.getIncomes(),
+      cash_flows: this.getCashFlows(),
+      financial_accounts: this.getFinancialAccounts(),
+      financial_account_txs: this.getFinancialAccountTxs(),
+      employees: this.getEmployees(),
+      attendance: this.getAttendance(),
+      salaries: this.getSalaries(),
       cash_sessions: this.getCashSessions(),
       quotations: this.getQuotations(),
       audit_logs: this.getAuditLogs(),
     };
+  }
+
+  // Automatic Local Backup Snapshots (keeps up to 5 latest encrypted snapshots)
+  static getAutoBackupSnapshots(): {
+    id: string;
+    timestamp: string;
+    trigger: string;
+    data: DatabaseBackup;
+  }[] {
+    return getItem(KEYS.BACKUP_HISTORY, []);
+  }
+
+  static saveAutoBackupSnapshot(trigger: string = 'scheduled'): {
+    id: string;
+    timestamp: string;
+    trigger: string;
+    data: DatabaseBackup;
+  } {
+    const snapshotData = this.exportFullBackup();
+    const entry = {
+      id: `autobak_${Date.now()}`,
+      timestamp: snapshotData.timestamp,
+      trigger,
+      data: snapshotData,
+    };
+    const existing = this.getAutoBackupSnapshots();
+    const nextList = [entry, ...existing].slice(0, 5);
+    setItem(KEYS.BACKUP_HISTORY, nextList);
+
+    const currentStore = this.getStore();
+    if (currentStore.last_auto_backup_at !== entry.timestamp) {
+      this.saveStore({
+        ...currentStore,
+        last_auto_backup_at: entry.timestamp,
+      });
+    }
+    return entry;
   }
 
   // Restore Complete Backup JSON Snapshot (automatically hashes any legacy plaintext PINs)
@@ -506,17 +732,30 @@ export class DBStorage {
         });
       }
       if (backup.categories) this.saveCategories(backup.categories);
+      if (backup.brands) this.saveBrands(backup.brands);
+      if (backup.generics) this.saveGenerics(backup.generics);
+      if (backup.pharma_companies) this.savePharmaCompanies(backup.pharma_companies);
+      if (backup.units) this.saveUnits(backup.units);
       if (backup.products) this.saveProducts(backup.products);
       if (backup.customers) this.saveCustomers(backup.customers);
       if (backup.customer_dues) this.saveCustomerDues(backup.customer_dues);
       if (backup.suppliers) this.saveSuppliers(backup.suppliers);
       if (backup.supplier_dues) this.saveSupplierDues(backup.supplier_dues);
       if (backup.purchases) this.savePurchases(backup.purchases);
+      if (backup.purchase_returns) this.savePurchaseReturns(backup.purchase_returns);
       if (backup.sales) this.saveSales(backup.sales);
       if (backup.stock_transactions) this.saveStockTransactions(backup.stock_transactions);
+      if (backup.stock_transfers) this.saveStockTransfers(backup.stock_transfers);
       if (backup.returns) this.saveReturns(backup.returns);
       if (backup.expenses) this.saveExpenses(backup.expenses);
       if (backup.recurring_expenses) this.saveRecurringExpenses(backup.recurring_expenses);
+      if (backup.incomes) this.saveIncomes(backup.incomes);
+      if (backup.cash_flows) this.saveCashFlows(backup.cash_flows);
+      if (backup.financial_accounts) this.saveFinancialAccounts(backup.financial_accounts);
+      if (backup.financial_account_txs) this.saveFinancialAccountTxs(backup.financial_account_txs);
+      if (backup.employees) this.saveEmployees(backup.employees);
+      if (backup.attendance) this.saveAttendance(backup.attendance);
+      if (backup.salaries) this.saveSalaries(backup.salaries);
       if (backup.cash_sessions) this.saveCashSessions(backup.cash_sessions);
       if (backup.quotations) this.saveQuotations(backup.quotations);
       if (backup.audit_logs) this.saveAuditLogs(backup.audit_logs);
@@ -543,9 +782,16 @@ export class DBStorage {
     setItem(KEYS.CUSTOMER_DUES, []);
     setItem(KEYS.SUPPLIER_DUES, []);
     setItem(KEYS.PURCHASES, []);
+    setItem(KEYS.PURCHASE_RETURNS, []);
     setItem(KEYS.STOCK_TRANSACTIONS, []);
+    setItem(KEYS.STOCK_TRANSFERS, []);
     setItem(KEYS.RETURNS, []);
     setItem(KEYS.EXPENSES, []);
+    setItem(KEYS.INCOMES, []);
+    setItem(KEYS.CASH_FLOWS, []);
+    setItem(KEYS.FINANCIAL_ACCOUNT_TXS, []);
+    setItem(KEYS.ATTENDANCE, []);
+    setItem(KEYS.SALARIES, []);
     setItem(KEYS.QUOTATIONS, []);
     setItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
 
@@ -572,7 +818,7 @@ export class DBStorage {
       user_name: userName,
       action: 'CLEAR_TRANSACTION_HISTORY',
       module: 'System / Database',
-      description: 'All sales history, purchases, customer dues, supplier dues, expenses, returns, and cash sessions cleared.',
+      description: 'All sales history, purchases, customer dues, supplier dues, expenses, returns, accounts transactions, and cash sessions cleared.',
       created_at: new Date().toISOString(),
       branch_id: this.getStore().branch_id || 'main',
     };
@@ -586,16 +832,28 @@ export class DBStorage {
 
     setItem(KEYS.PRODUCTS, []);
     setItem(KEYS.CATEGORIES, []);
+    setItem(KEYS.BRANDS, []);
+    setItem(KEYS.GENERICS, []);
+    setItem(KEYS.PHARMA_COMPANIES, []);
     setItem(KEYS.CUSTOMERS, []);
     setItem(KEYS.CUSTOMER_DUES, []);
     setItem(KEYS.SUPPLIERS, []);
     setItem(KEYS.SUPPLIER_DUES, []);
     setItem(KEYS.PURCHASES, []);
+    setItem(KEYS.PURCHASE_RETURNS, []);
     setItem(KEYS.SALES, []);
     setItem(KEYS.STOCK_TRANSACTIONS, []);
+    setItem(KEYS.STOCK_TRANSFERS, []);
     setItem(KEYS.RETURNS, []);
     setItem(KEYS.EXPENSES, []);
     setItem(KEYS.RECURRING_EXPENSES, []);
+    setItem(KEYS.INCOMES, []);
+    setItem(KEYS.CASH_FLOWS, []);
+    setItem(KEYS.FINANCIAL_ACCOUNTS, []);
+    setItem(KEYS.FINANCIAL_ACCOUNT_TXS, []);
+    setItem(KEYS.EMPLOYEES, []);
+    setItem(KEYS.ATTENDANCE, []);
+    setItem(KEYS.SALARIES, []);
     setItem(KEYS.QUOTATIONS, []);
     setItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
     this.saveUsers([adminUser]);
@@ -606,7 +864,7 @@ export class DBStorage {
       user_name: userName,
       action: 'FULL_STORE_WIPE',
       module: 'System / Database',
-      description: 'Store completely wiped to fresh state. Catalog, transactions, and customers reset for clean production launch.',
+      description: 'Store completely wiped to fresh state. Catalog, transactions, accounts, employees, and customers reset for clean production launch.',
       created_at: new Date().toISOString(),
       branch_id: store?.branch_id || 'main',
     };

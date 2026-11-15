@@ -37,6 +37,13 @@ import {
   buildWhatsAppUrl,
   isCustomerDueOverdue,
 } from '../utils/dueAlerts';
+import {
+  isCategoryEnabled,
+  isDemoModeEnabled,
+  isGeneralProductModuleEnabled,
+  isMedicineModuleEnabled,
+  isProductEnabled,
+} from '../utils/modules';
 
 interface HeaderProps {
   onToggleMobileMenu?: () => void;
@@ -114,12 +121,18 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
     return () => clearInterval(interval);
   }, []);
 
+  const medEnabled = isMedicineModuleEnabled(store);
+  const genEnabled = isGeneralProductModuleEnabled(store);
+  const demoEnabled = isDemoModeEnabled(store);
+
   const openCashSession = cashSessions.find((s) => s.status === 'open');
   const lowStockItems = products
+    .filter((p) => !p.archived && isProductEnabled(p, store))
     .flatMap((p) => p.variants)
     .filter((v) => v.stock_quantity <= v.min_stock_level);
   const dueCustomers = customers.filter((c) => (c.total_due_amount || 0) > 0);
   const totalAlerts = lowStockItems.length + (dueCustomers.length > 0 ? 1 : 0);
+  const visibleCategories = categories.filter((c) => isCategoryEnabled(c, store));
 
   const handleSwitchUserClick = (u: UserType) => {
     setSelectedUser(u);
@@ -187,19 +200,24 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
   const mainNavLinks = [
     { id: 'dashboard', label: 'HOME' },
     { id: 'pos', label: 'POS SHOP' },
-    { id: 'products', label: 'PRODUCTS' },
+    ...(medEnabled || genEnabled ? [{ id: 'products', label: 'PRODUCTS' }] : []),
     { id: 'inventory', label: 'INVENTORY' },
     { id: 'customers', label: 'CUSTOMERS' },
+    { id: 'receipts', label: 'RECEIPTS' },
     { id: 'sales', label: 'SALES' },
   ].filter((l) => canAccessTab(activeUser, l.id));
 
   const moreModules = [
+    ...(medEnabled ? [{ id: 'medicine', label: 'Medicine Management' }] : []),
+    ...(genEnabled ? [{ id: 'general_products', label: 'General Product Mgmt' }] : []),
     { id: 'purchases', label: 'Purchases & Stock In' },
     { id: 'suppliers', label: 'Suppliers' },
     { id: 'customer_due', label: 'Customer Due Ledger' },
     { id: 'returns', label: 'Returns & Exchange' },
+    { id: 'accounts', label: 'Accounts Management' },
     { id: 'expenses', label: 'Shop Expenses' },
     { id: 'cash', label: 'Cash Drawer & Shift' },
+    { id: 'employees', label: 'Employee Management' },
     { id: 'quotations', label: 'Quotations' },
     { id: 'reports', label: 'Reports & P/L' },
     { id: 'users', label: 'Salesman & Users' },
@@ -352,7 +370,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
               </button>
 
               {showMoreDropdown && (
-                <div className="absolute left-0 top-full mt-3 w-60 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 space-y-0.5">
+                <div className="absolute left-0 top-full mt-3 w-64 max-h-[75vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 space-y-0.5">
                   {moreModules.map((mod) => (
                     <button
                       key={mod.id}
@@ -399,7 +417,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
           {/* Right Action Icons (Search, Alerts, User, Cart) */}
           <div className="flex items-center gap-0.5 sm:gap-2.5 shrink-0">
             <button
-              onClick={() => setActiveTab('products')}
+              onClick={() => setActiveTab(medEnabled || genEnabled ? 'products' : 'pos')}
               className="flex w-8 h-8 sm:w-9 sm:h-9 rounded-full hover:bg-slate-100 text-slate-600 items-center justify-center transition-colors cursor-pointer"
               title="Search Catalog"
             >
@@ -601,7 +619,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
       <div className="bg-white border-b border-slate-100 px-3 sm:px-6 lg:px-8 py-2">
         <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-4 sm:gap-5 overflow-x-auto text-[11px] font-semibold text-slate-500 whitespace-nowrap scrollbar-none">
-            {categories.slice(0, 7).map((cat) => (
+            {visibleCategories.slice(0, 7).map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveTab('pos')}
@@ -646,7 +664,9 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
             </p>
 
             <div className="space-y-2 max-h-56 overflow-y-auto">
-              {users.map((u) => {
+              {users
+                .filter((u) => demoEnabled || u.role !== 'visitor')
+                .map((u) => {
                 const isSelected = selectedUser?.id === u.id;
                 const isActiveNow = activeUser.id === u.id;
                 return (

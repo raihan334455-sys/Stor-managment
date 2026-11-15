@@ -15,11 +15,20 @@ import {
   MapPin,
   Mail,
   Edit,
+  Printer,
 } from 'lucide-react';
 import { Supplier, PaymentMethodType } from '../../types';
 
 export const SuppliersManagement: React.FC = () => {
-  const { suppliers, purchases, supplierDues, store, paySupplierDue, saveSupplier } = useApp();
+  const {
+    suppliers,
+    purchases,
+    supplierDues,
+    store,
+    paySupplierDue,
+    saveSupplier,
+    setPrintableReceipt,
+  } = useApp();
 
   const [search, setSearch] = useState('');
   const [filterDueOnly, setFilterDueOnly] = useState(false);
@@ -40,6 +49,7 @@ export const SuppliersManagement: React.FC = () => {
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethodType>('cash');
   const [payNotes, setPayNotes] = useState('');
+  const [formError, setFormError] = useState('');
 
   const handleOpenAdd = () => {
     setEditingSupplier(null);
@@ -48,6 +58,7 @@ export const SuppliersManagement: React.FC = () => {
     setSupMobile('');
     setSupEmail('');
     setSupAddress('');
+    setFormError('');
     setShowAddEditModal(true);
   };
 
@@ -58,13 +69,14 @@ export const SuppliersManagement: React.FC = () => {
     setSupMobile(sup.mobile);
     setSupEmail(sup.email || '');
     setSupAddress(sup.address || '');
+    setFormError('');
     setShowAddEditModal(true);
   };
 
   const handleSaveSupplier = (e: React.FormEvent) => {
     e.preventDefault();
     if (!supName.trim() || !supMobile.trim()) {
-      alert('Supplier name and mobile are required.');
+      setFormError('Supplier name and mobile are required.');
       return;
     }
 
@@ -94,6 +106,7 @@ export const SuppliersManagement: React.FC = () => {
     setPayAmount(sup.total_due > 0 ? sup.total_due.toString() : '');
     setPayMethod('cash');
     setPayNotes('');
+    setFormError('');
     setShowPayDueModal(true);
   };
 
@@ -102,13 +115,8 @@ export const SuppliersManagement: React.FC = () => {
     if (!payingSupplier) return;
     const amount = parseFloat(payAmount);
     if (!amount || amount <= 0) {
-      alert('Please enter a valid payment amount.');
+      setFormError('Please enter a valid payment amount.');
       return;
-    }
-    if (amount > payingSupplier.total_due) {
-      if (!confirm(`Amount ৳${amount} exceeds total due ৳${payingSupplier.total_due}. Continue?`)) {
-        return;
-      }
     }
 
     paySupplierDue(payingSupplier.id, amount, payMethod, payNotes);
@@ -349,6 +357,11 @@ export const SuppliersManagement: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveSupplier} className="space-y-4">
+              {formError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
+                  {formError}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Contact Person / Supplier Name *
@@ -449,6 +462,11 @@ export const SuppliersManagement: React.FC = () => {
             </div>
 
             <form onSubmit={handleConfirmPayDue} className="space-y-4">
+              {formError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
+                  {formError}
+                </div>
+              )}
               <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-center justify-between">
                 <span className="text-xs font-semibold text-amber-800">Total Outstanding Payable:</span>
                 <span className="font-mono font-bold text-base text-amber-700">
@@ -510,7 +528,7 @@ export const SuppliersManagement: React.FC = () => {
                   type="submit"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold"
                 >
-                  Confirm Payment
+                  Confirm Payment & Print Receipt
                 </button>
               </div>
             </form>
@@ -570,45 +588,72 @@ export const SuppliersManagement: React.FC = () => {
                     <th className="p-2.5 text-right">TOTAL</th>
                     <th className="p-2.5 text-right">PAID</th>
                     <th className="p-2.5 text-right">DUE BALANCE</th>
+                    <th className="p-2.5 text-right">RECEIPT</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {supplierDues
                     .filter((d) => d.supplier_id === selectedSupplierForLedger.id)
-                    .map((tx) => (
-                      <tr key={tx.id}>
-                        <td className="p-2.5 font-mono text-slate-500">
-                          {tx.date} {tx.time}
-                        </td>
-                        <td className="p-2.5">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mr-1.5 ${
-                              tx.type === 'due_added'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
-                            {tx.type === 'due_added' ? 'Purchase Credit' : 'Payment'}
-                          </span>
-                          <span className="text-slate-700">{tx.description}</span>
-                        </td>
-                        <td className="p-2.5 text-right font-mono">
-                          {store.currency_symbol}
-                          {tx.total_amount.toLocaleString()}
-                        </td>
-                        <td className="p-2.5 text-right font-mono text-emerald-600 font-semibold">
-                          {store.currency_symbol}
-                          {tx.paid_amount.toLocaleString()}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-bold text-amber-700">
-                          {store.currency_symbol}
-                          {tx.balance_after.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
+                    .map((tx) => {
+                      const liveSup = suppliers.find((s) => s.id === tx.supplier_id);
+                      const isSupCleared =
+                        tx.type === 'due_payment' &&
+                        (tx.balance_after <= 0 || (liveSup !== undefined && liveSup.total_due <= 0));
+                      return (
+                        <tr key={tx.id}>
+                          <td className="p-2.5 font-mono text-slate-500">
+                            {tx.date} {tx.time}
+                          </td>
+                          <td className="p-2.5">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mr-1.5 ${
+                                tx.type === 'due_added'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : isSupCleared
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              {tx.type === 'due_added'
+                                ? 'Purchase Credit'
+                                : isSupCleared
+                                ? 'Due Cleared'
+                                : 'Payment'}
+                            </span>
+                            <span className="text-slate-700">{tx.description}</span>
+                          </td>
+                          <td className="p-2.5 text-right font-mono">
+                            {store.currency_symbol}
+                            {tx.total_amount.toLocaleString()}
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-emerald-600 font-semibold">
+                            {store.currency_symbol}
+                            {tx.paid_amount.toLocaleString()}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold text-amber-700">
+                            {store.currency_symbol}
+                            {tx.balance_after.toLocaleString()}
+                          </td>
+                          <td className="p-2.5 text-right">
+                            {tx.type === 'due_payment' ? (
+                              <button
+                                type="button"
+                                onClick={() => setPrintableReceipt({ type: 'supplier_due', data: tx })}
+                                className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Printer className="w-3 h-3 text-emerald-600" />
+                                <span>Receipt</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-300">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   {supplierDues.filter((d) => d.supplier_id === selectedSupplierForLedger.id).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="p-6 text-center text-slate-400">
+                      <td colSpan={6} className="p-6 text-center text-slate-400">
                         No transactions recorded in ledger for this supplier.
                       </td>
                     </tr>

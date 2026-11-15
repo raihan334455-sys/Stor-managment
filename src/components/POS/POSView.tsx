@@ -30,6 +30,7 @@ import {
   Calendar,
   QrCode,
   CheckCircle2,
+  Layers,
 } from 'lucide-react';
 import {
   Product,
@@ -39,15 +40,34 @@ import {
   PaymentMethodType,
   SplitPaymentDetail,
   Sale,
+  PackagingUnitConfig,
 } from '../../types';
 import { DueAlertModal } from '../Customers/DueAlertModal';
 import { QrBarcodeScannerModal, ScanResultFeedback } from '../Scanner/QrBarcodeScannerModal';
+import { getMobilePurchaseStats } from '../../utils/customerPurchaseStats';
+import {
+  isCategoryEnabled,
+  isGeneralProductModuleEnabled,
+  isMedicineModuleEnabled,
+  isProductEnabled,
+} from '../../utils/modules';
+import {
+  getVariantBaseUnit,
+  getVariantPackagingOptions,
+  findPackagingByBarcode,
+  getVariantBatches,
+  getPreferredBatchForSale,
+  getDaysUntilExpiry,
+  formatStockBreakdown,
+  getBasePackagingPriceOption,
+} from '../../utils/packaging';
 
 export const POSView: React.FC = () => {
   const {
     products,
     categories,
     customers,
+    sales,
     store,
     completeSale,
     heldCarts,
@@ -115,14 +135,30 @@ export const POSView: React.FC = () => {
   const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
   const [scanFeedback, setScanFeedback] = useState<ScanResultFeedback | null>(null);
 
+  // Variant / Packaging / Batch Selection Modal
+  const [posSelectModal, setPosSelectModal] = useState<{
+    product: Product;
+    initialVariantId: string;
+  } | null>(null);
+  const [modalVariantId, setModalVariantId] = useState<string>('');
+  const [modalPkgId, setModalPkgId] = useState<string>('');
+  const [modalBatchNo, setModalBatchNo] = useState<string>('');
+  const [modalQty, setModalQty] = useState<string>('1');
+
   useEffect(() => {
     if (!scanFeedback) return;
     const t = setTimeout(() => setScanFeedback(null), 4500);
     return () => clearTimeout(t);
   }, [scanFeedback]);
 
-  // Filter Active Products & Flatten Variants
-  const activeProducts = products.filter((p) => !p.archived);
+  const medEnabled = isMedicineModuleEnabled(store);
+  const genEnabled = isGeneralProductModuleEnabled(store);
+  const visibleCategories = categories.filter((c) => isCategoryEnabled(c, store));
+
+  // Filter Active Products & Flatten Variants (respecting enabled modules)
+  const activeProducts = products.filter(
+    (p) => !p.archived && p.active !== false && isProductEnabled(p, store)
+  );
 
   // Extract all searchable variants with their parent product info
   const allVariants = activeProducts.flatMap((p) =>
@@ -133,6 +169,13 @@ export const POSView: React.FC = () => {
         product_name: p.name,
         category_id: p.category_id,
         image: p.image,
+        generic_name: p.generic_name,
+        brand_name: p.brand_name,
+        company_name: p.company_name,
+        medicine_type: p.medicine_type,
+        strength: v.strength || p.strength,
+        rack_number: p.rack_number,
+        is_medicine: p.is_medicine,
       }))
   );
 
@@ -145,7 +188,16 @@ export const POSView: React.FC = () => {
       v.product_name.toLowerCase().includes(q) ||
       v.variant_name.toLowerCase().includes(q) ||
       v.barcode.toLowerCase().includes(q) ||
-      v.sku.toLowerCase().includes(q);
+      v.sku.toLowerCase().includes(q) ||
+      (v.generic_name || '').toLowerCase().includes(q) ||
+      (v.brand_name || '').toLowerCase().includes(q) ||
+      (v.company_name || '').toLowerCase().includes(q) ||
+      (v.strength || '').toLowerCase().includes(q) ||
+      (v.medicine_type || '').toLowerCase().includes(q) ||
+      (v.rack_number || '').toLowerCase().includes(q) ||
+      (v.batch_number || '').toLowerCase().includes(q) ||
+      (v.packaging_units || []).some((pu) => (pu.barcode || '').toLowerCase().includes(q)) ||
+      (v.batches || []).some((b) => b.batch_number.toLowerCase().includes(q));
     return matchesCategory && matchesQuery;
   });
 
@@ -179,9 +231,189 @@ export const POSView: React.FC = () => {
     return Array.from(new Set(candidates));
   };
 
+  // Base-unit stock usage helpers across current cart lines
+  const getCartVariantBaseUsed = (items: CartItem[], variantId: string, excludeIndex?: number): number =>
+    items.reduce((sum, ci, idx) => {
+      if (idx === excludeIndex || ci.variant_id !== variantId) return sum;
+      return sum + ci.quantity * (ci.conversion_factor || 1);
+    }, 0);
+
+  const getCartBatchBaseUsed = (
+    items: CartItem[],
+    variantId: string,
+    batchNumber: string,
+    excludeIndex?: number
+  ): number =>
+    items.reduce((sum, ci, idx) => {
+      if (
+        idx === excludeIndex ||
+        ci.variant_id !== variantId ||
+        (ci.batch_number || '').toLowerCase() !== batchNumber.toLowerCase()
+      ) {
+        return sum;
+      }
+      return sum + ci.quantity * (ci.conversion_factor || 1);
+    }, 0);
+
+  // Add Item with specific Variant, Packaging Tier & Batch Lot
+  const addConfiguredItemToCart = (
+    variant: ProductVariant & { product_name?: string },
+    pkg: PackagingUnitConfig,
+    batchNo?: string,
+    expiryDate?: string,
+    qtyToAdd: number = 1
+  ): boolean => {
+    const baseUnit = getVariantBaseUnit(variant);
+    const factor = pkg.conversion_factor > 0 ? pkg.conversion_factor : 1;
+    const addBaseQty = Math.round(qtyToAdd * factor * 1000) / 1000;
+    const usedVariantBase = getCartVariantBaseUsed(cartItems, variant.id);
+
+    if (usedVariantBase + addBaseQty > variant.stock_quantity + 0.0001) {
+      const remBase = Math.max(0, Math.round((variant.stock_quantity - usedVariantBase) * 1000) / 1000);
+      setScanFeedback({
+        status: 'not_found',
+        code: variant.barcode,
+        message: `পর্যাপ্ত স্টক নেই (${variant.variant_name}): বাকি আছে ${remBase} ${baseUnit}`,
+      });
+      return false;
+    }
+
+    if (batchNo && Array.isArray(variant.batches) && variant.batches.length > 0) {
+      const targetBatch = variant.batches.find(
+        (b) => b.batch_number.toLowerCase() === batchNo.toLowerCase()
+      );
+      if (targetBatch) {
+        const usedBatchBase = getCartBatchBaseUsed(cartItems, variant.id, batchNo);
+        if (usedBatchBase + addBaseQty > targetBatch.stock_quantity + 0.0001) {
+          const remBatch = Math.max(
+            0,
+            Math.round((targetBatch.stock_quantity - usedBatchBase) * 1000) / 1000
+          );
+          setScanFeedback({
+            status: 'not_found',
+            code: batchNo,
+            message: `Batch ${batchNo}-এ পর্যাপ্ত স্টক নেই (বাকি: ${remBatch} ${baseUnit})`,
+          });
+          return false;
+        }
+      }
+    }
+
+    const parentProd = activeProducts.find((p) => p.id === variant.product_id);
+    const productName = variant.product_name || parentProd?.name || variant.variant_name;
+
+    setCartItems((prev) => {
+      const idx = prev.findIndex(
+        (item) =>
+          item.variant_id === variant.id &&
+          item.unit === pkg.unit_name &&
+          (item.batch_number || '') === (batchNo || '')
+      );
+      if (idx !== -1) {
+        const updated = [...prev];
+        const newQty = Math.round((updated[idx].quantity + qtyToAdd) * 1000) / 1000;
+        updated[idx] = {
+          ...updated[idx],
+          quantity: newQty,
+          total_price: Math.max(
+            0,
+            Math.round(newQty * updated[idx].selling_price * 100) / 100 - updated[idx].item_discount
+          ),
+        };
+        return updated;
+      } else {
+        const newItem: CartItem = {
+          product_id: variant.product_id,
+          product_name: productName,
+          variant_id: variant.id,
+          variant_name: variant.variant_name,
+          sku: variant.sku,
+          barcode: pkg.barcode || variant.barcode,
+          unit: pkg.unit_name,
+          base_unit: baseUnit,
+          conversion_factor: factor,
+          batch_number: batchNo,
+          expiry_date: expiryDate,
+          purchase_price: pkg.purchase_price,
+          selling_price: pkg.selling_price,
+          quantity: Math.round(qtyToAdd * 1000) / 1000,
+          max_stock: variant.stock_quantity,
+          item_discount: 0,
+          total_price: Math.round(qtyToAdd * pkg.selling_price * 100) / 100,
+        };
+        return [...prev, newItem];
+      }
+    });
+    return true;
+  };
+
+  // Open Variant / Packaging / Batch Selection Modal
+  const openPosSelectModal = (product: Product, initialVariantId: string) => {
+    const activeVars = product.variants.filter((v) => v.active);
+    const targetVar =
+      activeVars.find((v) => v.id === initialVariantId) || activeVars[0] || product.variants[0];
+    if (!targetVar) return;
+    const pkgOpts = getVariantPackagingOptions(targetVar);
+    const defaultPkg = getBasePackagingPriceOption(targetVar) || pkgOpts[0];
+    const prefBatch = getPreferredBatchForSale(targetVar);
+
+    setModalVariantId(targetVar.id);
+    setModalPkgId(defaultPkg.id);
+    setModalBatchNo(prefBatch?.batch_number || '');
+    setModalQty('1');
+    setPosSelectModal({ product, initialVariantId: targetVar.id });
+  };
+
+  const handleCatalogCardClick = (variant: (typeof allVariants)[0]) => {
+    const parentProd = activeProducts.find((p) => p.id === variant.product_id);
+    const pkgOpts = getVariantPackagingOptions(variant);
+    const batches = getVariantBatches(variant);
+    const activeVarCount = parentProd ? parentProd.variants.filter((v) => v.active).length : 1;
+
+    if (parentProd && (activeVarCount > 1 || pkgOpts.length > 1 || batches.length > 1)) {
+      openPosSelectModal(parentProd, variant.id);
+    } else {
+      const defaultPkg = pkgOpts[0];
+      const prefBatch = getPreferredBatchForSale(variant);
+      addConfiguredItemToCart(
+        variant,
+        defaultPkg,
+        prefBatch?.batch_number,
+        prefBatch?.expiry_date,
+        1
+      );
+    }
+  };
+
   // Handle Barcode / QR Scan from Camera, Image, or Keyboard Scanner
   const processScannedCode = (rawCode: string, fromCameraModal = false) => {
     const candidates = extractScannedCandidates(rawCode);
+
+    // 1. Check package-specific barcodes first (e.g., Box barcode or Strip barcode)
+    for (const v of allVariants) {
+      const matchedPkg = findPackagingByBarcode(v, candidates);
+      if (matchedPkg) {
+        const prefBatch = getPreferredBatchForSale(v);
+        const added = addConfiguredItemToCart(
+          v,
+          matchedPkg,
+          prefBatch?.batch_number,
+          prefBatch?.expiry_date,
+          1
+        );
+        if (added) {
+          setSearchQuery('');
+          setScanFeedback({
+            status: 'success',
+            code: candidates[0],
+            message: `কার্টে যোগ হয়েছে: ${v.product_name} (${v.variant_name} · ${matchedPkg.unit_name})`,
+          });
+        }
+        return;
+      }
+    }
+
+    // 2. Fallback to variant primary barcode / SKU
     const exactMatch = allVariants.find((v) =>
       candidates.some(
         (c) =>
@@ -191,13 +423,23 @@ export const POSView: React.FC = () => {
     );
 
     if (exactMatch) {
-      addToCart(exactMatch);
-      setSearchQuery('');
-      setScanFeedback({
-        status: 'success',
-        code: candidates[0],
-        message: `কার্টে যোগ হয়েছে: ${exactMatch.product_name} (${exactMatch.variant_name})`,
-      });
+      const defaultPkg = getBasePackagingPriceOption(exactMatch);
+      const prefBatch = getPreferredBatchForSale(exactMatch);
+      const added = addConfiguredItemToCart(
+        exactMatch,
+        defaultPkg,
+        prefBatch?.batch_number,
+        prefBatch?.expiry_date,
+        1
+      );
+      if (added) {
+        setSearchQuery('');
+        setScanFeedback({
+          status: 'success',
+          code: candidates[0],
+          message: `কার্টে যোগ হয়েছে: ${exactMatch.product_name} (${exactMatch.variant_name})`,
+        });
+      }
     } else {
       const displayCode = candidates[0] || rawCode.trim();
       if (!fromCameraModal) {
@@ -220,54 +462,131 @@ export const POSView: React.FC = () => {
     processScannedCode(searchQuery, false);
   };
 
-  // Add Item to Cart
-  const addToCart = (variant: (typeof allVariants)[0]) => {
-    setCartItems((prev) => {
-      const idx = prev.findIndex((item) => item.variant_id === variant.id);
-      if (idx !== -1) {
-        const updated = [...prev];
-        const newQty = updated[idx].quantity + 1;
-        updated[idx] = {
-          ...updated[idx],
-          quantity: newQty,
-          total_price: Math.round(newQty * updated[idx].selling_price * 100) / 100,
-        };
-        return updated;
-      } else {
-        const newItem: CartItem = {
-          product_id: variant.product_id,
-          product_name: variant.product_name,
-          variant_id: variant.id,
-          variant_name: variant.variant_name,
-          sku: variant.sku,
-          barcode: variant.barcode,
-          unit: variant.unit,
-          purchase_price: variant.purchase_price,
-          selling_price: variant.selling_price,
-          quantity: 1,
-          max_stock: variant.stock_quantity,
-          item_discount: 0,
-          total_price: variant.selling_price,
-        };
-        return [...prev, newItem];
-      }
-    });
-  };
-
-  // Update Cart Quantity
+  // Update Cart Quantity (with base-unit stock guard)
   const updateQuantity = (index: number, newQty: number) => {
     if (newQty <= 0) {
       removeFromCart(index);
       return;
     }
+    const targetItem = cartItems[index];
+    if (!targetItem) return;
+    const variant = allVariants.find((v) => v.id === targetItem.variant_id);
+    if (variant) {
+      const factor = targetItem.conversion_factor || 1;
+      const neededBase = Math.round(newQty * factor * 1000) / 1000;
+      const otherUsedBase = getCartVariantBaseUsed(cartItems, variant.id, index);
+      if (otherUsedBase + neededBase > variant.stock_quantity + 0.0001) {
+        const rem = Math.max(0, Math.round((variant.stock_quantity - otherUsedBase) * 1000) / 1000);
+        setScanFeedback({
+          status: 'not_found',
+          code: variant.barcode,
+          message: `পর্যাপ্ত স্টক নেই (${variant.variant_name}): সর্বোচ্চ বাকি ${rem} ${getVariantBaseUnit(variant)}`,
+        });
+        return;
+      }
+      if (targetItem.batch_number && variant.batches?.length) {
+        const bObj = variant.batches.find(
+          (b) => b.batch_number.toLowerCase() === targetItem.batch_number!.toLowerCase()
+        );
+        if (bObj) {
+          const otherBatchUsed = getCartBatchBaseUsed(
+            cartItems,
+            variant.id,
+            targetItem.batch_number,
+            index
+          );
+          if (otherBatchUsed + neededBase > bObj.stock_quantity + 0.0001) {
+            setScanFeedback({
+              status: 'not_found',
+              code: targetItem.batch_number,
+              message: `Batch ${targetItem.batch_number}-এ সর্বোচ্চ ${Math.max(0, bObj.stock_quantity - otherBatchUsed)} ${getVariantBaseUnit(variant)} আছে`,
+            });
+            return;
+          }
+        }
+      }
+    }
+
     setCartItems((prev) => {
       const updated = [...prev];
       updated[index] = {
         ...updated[index],
         quantity: Math.round(newQty * 1000) / 1000,
-        total_price:
+        total_price: Math.max(
+          0,
           Math.round(newQty * updated[index].selling_price * 100) / 100 -
-          updated[index].item_discount,
+            updated[index].item_discount
+        ),
+      };
+      return updated;
+    });
+  };
+
+  // Switch Packaging Unit inline in Cart
+  const updateCartItemPackaging = (index: number, newUnitName: string) => {
+    const item = cartItems[index];
+    if (!item) return;
+    const variant = allVariants.find((v) => v.id === item.variant_id);
+    if (!variant) return;
+    const pkg = getVariantPackagingOptions(variant).find((o) => o.unit_name === newUnitName);
+    if (!pkg) return;
+
+    const neededBase = Math.round(item.quantity * pkg.conversion_factor * 1000) / 1000;
+    const otherUsedBase = getCartVariantBaseUsed(cartItems, variant.id, index);
+    if (otherUsedBase + neededBase > variant.stock_quantity + 0.0001) {
+      setScanFeedback({
+        status: 'not_found',
+        code: variant.barcode,
+        message: `${item.quantity} ${pkg.unit_name} (= ${neededBase} ${getVariantBaseUnit(variant)}) বিক্রির জন্য পর্যাপ্ত স্টক নেই`,
+      });
+      return;
+    }
+
+    setCartItems((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        unit: pkg.unit_name,
+        conversion_factor: pkg.conversion_factor,
+        purchase_price: pkg.purchase_price,
+        selling_price: pkg.selling_price,
+        barcode: pkg.barcode || updated[index].barcode,
+        total_price: Math.max(
+          0,
+          Math.round(updated[index].quantity * pkg.selling_price * 100) / 100 -
+            updated[index].item_discount
+        ),
+      };
+      return updated;
+    });
+  };
+
+  // Switch Batch inline in Cart
+  const updateCartItemBatch = (index: number, newBatchNo: string) => {
+    const item = cartItems[index];
+    if (!item) return;
+    const variant = allVariants.find((v) => v.id === item.variant_id);
+    if (!variant) return;
+    const batch = getVariantBatches(variant).find((b) => b.batch_number === newBatchNo);
+    if (!batch) return;
+
+    const neededBase = Math.round(item.quantity * (item.conversion_factor || 1) * 1000) / 1000;
+    const otherBatchUsed = getCartBatchBaseUsed(cartItems, variant.id, newBatchNo, index);
+    if (otherBatchUsed + neededBase > batch.stock_quantity + 0.0001) {
+      setScanFeedback({
+        status: 'not_found',
+        code: newBatchNo,
+        message: `Batch ${newBatchNo}-এ পর্যাপ্ত স্টক নেই`,
+      });
+      return;
+    }
+
+    setCartItems((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        batch_number: batch.batch_number,
+        expiry_date: batch.expiry_date,
       };
       return updated;
     });
@@ -304,21 +623,30 @@ export const POSView: React.FC = () => {
     const paidNum = Math.max(0, parseFloat(paidAmountInput) || 0);
     const dueNum = Math.max(0, Math.round((grandTotal - paidNum) * 100) / 100);
 
-    const saleItems = cartItems.map((ci) => ({
-      id: `sitem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      product_id: ci.product_id,
-      product_name: ci.product_name,
-      variant_id: ci.variant_id,
-      variant_name: ci.variant_name,
-      sku: ci.sku,
-      barcode: ci.barcode,
-      quantity: ci.quantity,
-      unit: ci.unit,
-      unit_purchase_price: ci.purchase_price,
-      unit_selling_price: ci.selling_price,
-      discount: ci.item_discount,
-      total_price: ci.total_price,
-    }));
+    const saleItems = cartItems.map((ci) => {
+      const factor = ci.conversion_factor && ci.conversion_factor > 0 ? ci.conversion_factor : 1;
+      const baseQty = Math.round(ci.quantity * factor * 1000) / 1000;
+      return {
+        id: `sitem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        product_id: ci.product_id,
+        product_name: ci.product_name,
+        variant_id: ci.variant_id,
+        variant_name: ci.variant_name,
+        sku: ci.sku,
+        barcode: ci.barcode,
+        quantity: ci.quantity,
+        unit: ci.unit,
+        base_unit: ci.base_unit || ci.unit,
+        conversion_factor: factor,
+        base_quantity: baseQty,
+        batch_number: ci.batch_number,
+        expiry_date: ci.expiry_date,
+        unit_purchase_price: ci.purchase_price,
+        unit_selling_price: ci.selling_price,
+        discount: ci.item_discount,
+        total_price: ci.total_price,
+      };
+    });
 
     const completedSale: Sale = completeSale({
       customer_id: targetCustomer ? targetCustomer.id : undefined,
@@ -509,28 +837,48 @@ export const POSView: React.FC = () => {
         {/* Customer Dropdown Results */}
         {showCustomerDropdown && customerSearch.trim().length > 0 && (
           <div className="absolute left-3 right-3 top-12 bg-white border border-slate-200 rounded-xl shadow-2xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-100">
-            {filteredCustomers.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => handleSelectCustomer(c)}
-                className="w-full p-2.5 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
-              >
-                <div>
-                  <div className="text-xs font-bold text-slate-800">{c.name}</div>
-                  <div className="text-[10px] text-slate-500">{c.mobile}</div>
-                </div>
-                {c.total_due_amount > 0 && (
-                  <span className="text-[10px] bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded border border-rose-200">
-                    Due: ৳{c.total_due_amount}
-                  </span>
-                )}
-              </button>
-            ))}
+            {filteredCustomers.map((c) => {
+              const cStats = getMobilePurchaseStats(c.mobile, sales, c.id);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => handleSelectCustomer(c)}
+                  className="w-full p-2.5 text-left hover:bg-slate-50 flex items-center justify-between gap-2 transition-colors"
+                >
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">{c.name}</div>
+                    <div className="text-[10px] text-slate-500">
+                      {c.mobile} • কেনা পণ্য: <strong className="text-[#5b46b5]">{cStats.totalProductQuantity} টি</strong> ({cStats.totalOrders} অর্ডার)
+                    </div>
+                  </div>
+                  {c.total_due_amount > 0 && (
+                    <span className="text-[10px] bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded border border-rose-200 shrink-0">
+                      Due: ৳{c.total_due_amount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
             {filteredCustomers.length === 0 && (
               <div className="p-3 text-center text-xs text-slate-500">No matching customer found</div>
             )}
           </div>
         )}
+
+        {/* Mobile Purchase History Summary Pill */}
+        {selectedCustomer && (() => {
+          const sStats = getMobilePurchaseStats(selectedCustomer.mobile, sales, selectedCustomer.id);
+          return (
+            <div className="mt-2 px-2.5 py-1.5 bg-violet-50 border border-violet-200 rounded-lg flex items-center justify-between gap-2 text-[11px] text-[#5b46b5]">
+              <span className="font-semibold truncate">
+                মোবাইল ({selectedCustomer.mobile}) মোট কেনা:
+              </span>
+              <span className="font-mono font-bold shrink-0">
+                {sStats.totalProductQuantity} টি পণ্য ({sStats.uniqueProductsCount} রকমের • {sStats.totalOrders} অর্ডার)
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Previous Customer Due Banner */}
         {selectedCustomer && selectedCustomer.total_due_amount > 0 && (
@@ -549,63 +897,126 @@ export const POSView: React.FC = () => {
 
       {/* Selected Items Cart Table */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2 divide-y divide-slate-100">
-        {cartItems.map((item, idx) => (
-          <div
-            key={idx}
-            className="pt-2 first:pt-0 flex items-center justify-between gap-2 hover:bg-slate-50/80 p-2 rounded-lg transition-colors"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-slate-800 truncate">{item.product_name}</div>
-              <div className="text-[10px] text-slate-500 truncate">
-                {item.variant_name} • {store.currency_symbol}
-                {item.selling_price}/{item.unit}
+        {cartItems.map((item, idx) => {
+          const itemVariant = allVariants.find((v) => v.id === item.variant_id);
+          const pkgOpts = itemVariant ? getVariantPackagingOptions(itemVariant) : [];
+          const batches = itemVariant ? getVariantBatches(itemVariant) : [];
+          const factor = item.conversion_factor || 1;
+          const baseUnit = item.base_unit || (itemVariant ? getVariantBaseUnit(itemVariant) : item.unit);
+          const totalBaseDeduction = Math.round(item.quantity * factor * 1000) / 1000;
+
+          return (
+            <div
+              key={`${item.variant_id}_${item.unit}_${item.batch_number || 'nobatch'}_${idx}`}
+              className="pt-2 first:pt-0 space-y-1.5 hover:bg-slate-50/80 p-2 rounded-lg transition-colors"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-slate-800 truncate">{item.product_name}</div>
+                  <div className="text-[10px] text-slate-500 truncate">
+                    {item.variant_name} • {store.currency_symbol}
+                    {item.selling_price}/{item.unit}
+                  </div>
+                </div>
+
+                {/* Quantity Controls & Decimal Edit */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => updateQuantity(idx, item.quantity - 1)}
+                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCartIndex(idx);
+                      setCustomQtyInput(item.quantity.toString());
+                      setShowWeightModal(true);
+                    }}
+                    className="px-2 py-0.5 bg-slate-50 border border-slate-200 hover:border-blue-500 text-blue-700 font-mono font-bold text-xs rounded min-w-[44px] text-center cursor-pointer tabular-nums"
+                    title="Click to enter custom or decimal quantity"
+                  >
+                    {item.quantity} {item.unit}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateQuantity(idx, item.quantity + 1)}
+                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Item Price Total */}
+                <div className="text-right min-w-[65px]">
+                  <div className="font-bold text-xs text-slate-800 font-mono tabular-nums">
+                    {store.currency_symbol}
+                    {item.total_price}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeFromCart(idx)}
+                    className="text-slate-400 hover:text-rose-600 transition-colors p-0.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
+
+              {/* Packaging Unit & Batch Switchers + Base-Unit Deduction Note */}
+              {(pkgOpts.length > 1 || batches.length > 0 || factor !== 1) && (
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                  {pkgOpts.length > 1 && (
+                    <select
+                      value={item.unit}
+                      onChange={(e) => updateCartItemPackaging(idx, e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-md px-1.5 py-0.5 font-semibold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
+                    >
+                      {pkgOpts.map((opt) => (
+                        <option key={opt.id} value={opt.unit_name}>
+                          {opt.unit_name} ({store.currency_symbol}{opt.selling_price})
+                          {opt.conversion_factor > 1 ? ` = ${opt.conversion_factor} ${baseUnit}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {batches.length > 1 ? (
+                    <select
+                      value={item.batch_number || ''}
+                      onChange={(e) => updateCartItemBatch(idx, e.target.value)}
+                      className="bg-amber-50 border border-amber-200 rounded-md px-1.5 py-0.5 font-mono font-semibold text-amber-800 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {batches.map((b) => (
+                        <option key={b.id} value={b.batch_number} disabled={b.stock_quantity <= 0}>
+                          Batch {b.batch_number} ({b.stock_quantity} {baseUnit}
+                          {b.expiry_date ? ` · Exp ${b.expiry_date}` : ''})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    item.batch_number && (
+                      <span className="font-mono text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                        Batch {item.batch_number}
+                        {item.expiry_date ? ` · Exp ${item.expiry_date}` : ''}
+                      </span>
+                    )
+                  )}
+
+                  {factor !== 1 && (
+                    <span className="font-mono text-indigo-700 font-semibold ml-auto tabular-nums">
+                      Stock: -{totalBaseDeduction} {baseUnit}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-
-            {/* Quantity Controls & Decimal Edit */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => updateQuantity(idx, item.quantity - 1)}
-                className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200"
-              >
-                <Minus className="w-3 h-3" />
-              </button>
-
-              <button
-                onClick={() => {
-                  setSelectedCartIndex(idx);
-                  setCustomQtyInput(item.quantity.toString());
-                  setShowWeightModal(true);
-                }}
-                className="px-2 py-0.5 bg-slate-50 border border-slate-200 hover:border-blue-500 text-blue-700 font-mono font-bold text-xs rounded min-w-[44px] text-center"
-                title="Click to enter weight or decimal quantity"
-              >
-                {item.quantity} {item.unit}
-              </button>
-
-              <button
-                onClick={() => updateQuantity(idx, item.quantity + 1)}
-                className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
-
-            {/* Item Price Total */}
-            <div className="text-right min-w-[65px]">
-              <div className="font-bold text-xs text-slate-800 font-mono">
-                {store.currency_symbol}
-                {item.total_price}
-              </div>
-              <button
-                onClick={() => removeFromCart(idx)}
-                className="text-slate-400 hover:text-rose-600 transition-colors p-0.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {cartItems.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
@@ -711,7 +1122,11 @@ export const POSView: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Scan QR/Barcode or Search Product (Name, Barcode, SKU)..."
+              placeholder={
+                medEnabled
+                  ? 'Scan QR/Barcode or Search Product/Medicine (Name, Generic, Company, Rack, Barcode)...'
+                  : 'Scan QR/Barcode or Search Product (Name, Brand, Rack, Barcode)...'
+              }
               className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800 placeholder-slate-400 rounded-xl pl-10 pr-24 py-2 text-xs focus:outline-none transition-all shadow-sm"
             />
             <button
@@ -818,7 +1233,7 @@ export const POSView: React.FC = () => {
           >
             All Categories
           </button>
-          {categories.map((cat) => (
+          {visibleCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategoryId(cat.id)}
@@ -838,16 +1253,20 @@ export const POSView: React.FC = () => {
           {filteredVariants.map((variant) => {
             const isOutOfStock = variant.stock_quantity <= 0;
             const isLowStock = variant.stock_quantity <= variant.min_stock_level && !isOutOfStock;
+            const pkgOpts = getVariantPackagingOptions(variant);
+            const baseUnit = getVariantBaseUnit(variant);
+            const batchList = getVariantBatches(variant);
+            const hasMultiOptions = pkgOpts.length > 1 || batchList.length > 1;
 
             return (
               <button
                 key={variant.id}
                 disabled={isOutOfStock}
-                onClick={() => addToCart(variant)}
+                onClick={() => handleCatalogCardClick(variant)}
                 className={`group relative bg-white border rounded-xl p-3 text-left flex flex-col justify-between transition-all shadow-sm ${
                   isOutOfStock
                     ? 'opacity-50 border-slate-200 cursor-not-allowed bg-slate-50'
-                    : 'border-slate-200 hover:border-blue-500 hover:shadow-md'
+                    : 'border-slate-200 hover:border-blue-500 hover:shadow-md cursor-pointer'
                 }`}
               >
                 {/* Product Image or Fallback */}
@@ -860,7 +1279,7 @@ export const POSView: React.FC = () => {
                       loading="lazy"
                     />
                     <span
-                      className={`absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm backdrop-blur-xs ${
+                      className={`absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm backdrop-blur-xs tabular-nums ${
                         isOutOfStock
                           ? 'bg-rose-100/90 text-rose-700 border border-rose-200'
                           : isLowStock
@@ -868,14 +1287,14 @@ export const POSView: React.FC = () => {
                           : 'bg-white/90 text-slate-700 border border-slate-200'
                       }`}
                     >
-                      {isOutOfStock ? 'OUT' : `${variant.stock_quantity} ${variant.unit}`}
+                      {isOutOfStock ? 'OUT' : `${variant.stock_quantity} ${baseUnit}`}
                     </span>
                   </div>
                 ) : (
                   <div className="w-full h-14 mb-2 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 relative">
                     <Package className="w-6 h-6 opacity-40 text-slate-500" />
                     <span
-                      className={`absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm ${
+                      className={`absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm tabular-nums ${
                         isOutOfStock
                           ? 'bg-rose-100 text-rose-700 border border-rose-200'
                           : isLowStock
@@ -883,7 +1302,7 @@ export const POSView: React.FC = () => {
                           : 'bg-white text-slate-700 border border-slate-200'
                       }`}
                     >
-                      {isOutOfStock ? 'OUT' : `${variant.stock_quantity} ${variant.unit}`}
+                      {isOutOfStock ? 'OUT' : `${variant.stock_quantity} ${baseUnit}`}
                     </span>
                   </div>
                 )}
@@ -894,24 +1313,55 @@ export const POSView: React.FC = () => {
                     <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider line-clamp-1">
                       {variant.barcode}
                     </span>
+                    {variant.rack_number && (
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+                        {variant.rack_number}
+                      </span>
+                    )}
                   </div>
 
                   <h4 className="font-bold text-xs text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight">
                     {variant.product_name}
+                    {medEnabled && variant.strength && (
+                      <span className="ml-1 text-[10px] font-mono font-semibold text-indigo-700">
+                        {variant.strength}
+                      </span>
+                    )}
                   </h4>
+                  {medEnabled && (variant.medicine_type || variant.generic_name) && (
+                    <p className="text-[10px] text-teal-700 font-medium line-clamp-1 mt-0.5">
+                      {variant.medicine_type ? `${variant.medicine_type}` : ''}
+                      {variant.medicine_type && variant.generic_name ? ' · ' : ''}
+                      {variant.generic_name || ''}
+                    </p>
+                  )}
                   <p className="text-[11px] text-slate-500 font-medium line-clamp-1 mt-0.5">
                     {variant.variant_name}
+                    {medEnabled && variant.company_name ? ` • ${variant.company_name}` : ''}
                   </p>
+                  {hasMultiOptions && (
+                    <p className="text-[10px] text-[#5b46b5] font-semibold line-clamp-1 mt-0.5">
+                      {pkgOpts.map((p) => p.unit_name).join(' · ')}
+                      {batchList.length > 1 ? ` · ${batchList.length} Batches` : ''}
+                    </p>
+                  )}
                 </div>
 
                 {/* Price & Unit Footer */}
-                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <div className="font-bold text-sm text-slate-900 font-mono">
-                    {store.currency_symbol}
-                    {variant.selling_price}
-                    <span className="text-[10px] font-normal text-slate-500">/{variant.unit}</span>
+                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between gap-1">
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-slate-900 font-mono leading-tight tabular-nums">
+                      {store.currency_symbol}
+                      {variant.selling_price}
+                      <span className="text-[10px] font-normal text-slate-500">/{baseUnit}</span>
+                    </div>
+                    {variant.mrp !== undefined && variant.mrp > variant.selling_price && (
+                      <div className="text-[10px] font-mono text-slate-400 line-through leading-tight tabular-nums">
+                        MRP {store.currency_symbol}{variant.mrp}
+                      </div>
+                    )}
                   </div>
-                  <div className="w-6 h-6 rounded-md bg-slate-100 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center text-slate-600 transition-all">
+                  <div className="w-6 h-6 rounded-md bg-slate-100 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center text-slate-600 transition-all shrink-0">
                     <Plus className="w-3.5 h-3.5" />
                   </div>
                 </div>
@@ -922,8 +1372,16 @@ export const POSView: React.FC = () => {
           {filteredVariants.length === 0 && (
             <div className="col-span-full py-12 text-center text-slate-500 flex flex-col items-center justify-center">
               <Search className="w-10 h-10 mb-2 text-slate-400" />
-              <p className="text-sm font-semibold">No products found</p>
-              <p className="text-xs text-slate-500 mt-1">Try another search term or filter category</p>
+              <p className="text-sm font-semibold">
+                {!medEnabled && !genEnabled
+                  ? 'All product & medicine modules are turned OFF'
+                  : 'No products found'}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                {!medEnabled && !genEnabled
+                  ? 'Enable Medicine or General Product module in Store Settings to sell items.'
+                  : 'Try another search term or filter category'}
+              </p>
             </div>
           )}
         </div>
@@ -1512,6 +1970,293 @@ export const POSView: React.FC = () => {
         allowContinuous={true}
         feedback={scanFeedback}
       />
+
+      {/* VARIANT, PACKAGING & BATCH SELECTION MODAL */}
+      {posSelectModal && (() => {
+        const prod = posSelectModal.product;
+        const activeVars = prod.variants.filter((v) => v.active);
+        const selVar =
+          activeVars.find((v) => v.id === modalVariantId) || activeVars[0] || prod.variants[0];
+        if (!selVar) return null;
+
+        const baseUnit = getVariantBaseUnit(selVar);
+        const pkgOpts = getVariantPackagingOptions(selVar);
+        const selPkg = pkgOpts.find((o) => o.id === modalPkgId) || pkgOpts[0];
+        const batches = getVariantBatches(selVar);
+        const selBatch = batches.find((b) => b.batch_number === modalBatchNo) || batches[0] || null;
+        const parsedQty = Math.max(0.001, parseFloat(modalQty) || 1);
+        const factor = selPkg ? selPkg.conversion_factor : 1;
+        const baseDeduction = Math.round(parsedQty * factor * 1000) / 1000;
+        const availBase = selBatch ? selBatch.stock_quantity : selVar.stock_quantity;
+        const lineTotal = selPkg ? Math.round(parsedQty * selPkg.selling_price * 100) / 100 : 0;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4 text-slate-800">
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-3 min-w-0">
+                  {prod.image ? (
+                    <img
+                      src={prod.image}
+                      alt={prod.name}
+                      className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-xl bg-indigo-50 text-[#5b46b5] flex items-center justify-center border border-indigo-100 shrink-0">
+                      <Layers className="w-5 h-5" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 truncate">{prod.name}</h3>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {prod.generic_name ? `${prod.generic_name} · ` : ''}
+                      {prod.company_name || prod.brand_name || 'Select variant, pack & batch'}
+                      {prod.rack_number ? ` · Rack ${prod.rack_number}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPosSelectModal(null)}
+                  className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 1. Variant Selection (e.g., Napa 500 vs Napa 665 or 100ml vs 200ml) */}
+              {activeVars.length > 1 && (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    1. Select Variant
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {activeVars.map((v) => {
+                      const isSel = v.id === selVar.id;
+                      const vBase = getVariantBaseUnit(v);
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          disabled={v.stock_quantity <= 0}
+                          onClick={() => {
+                            setModalVariantId(v.id);
+                            const nextPkgs = getVariantPackagingOptions(v);
+                            const nextDef = getBasePackagingPriceOption(v) || nextPkgs[0];
+                            const nextBatch = getPreferredBatchForSale(v);
+                            setModalPkgId(nextDef.id);
+                            setModalBatchNo(nextBatch?.batch_number || '');
+                          }}
+                          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                            isSel
+                              ? 'border-[#5b46b5] bg-indigo-50/70 ring-1 ring-[#5b46b5]'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-bold text-slate-800 truncate">
+                              {v.variant_name}
+                              {v.strength ? ` (${v.strength})` : ''}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-500 shrink-0 tabular-nums">
+                              {v.stock_quantity} {vBase}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
+                            SKU: {v.sku} · {store.currency_symbol}{v.selling_price}/{vBase}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. Packaging Unit Selection (Box / Strip / Tablet or Carton / Box / Packet) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    {activeVars.length > 1 ? '2. Select Packaging Unit' : '1. Select Packaging Unit'}
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Stock: {formatStockBreakdown(availBase, selVar)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {pkgOpts.map((opt) => {
+                    const isSel = opt.id === selPkg?.id;
+                    const maxUnitsInThisTier = Math.floor((availBase / opt.conversion_factor) * 100) / 100;
+                    const insufficientPack = availBase < opt.conversion_factor && availBase <= 0;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        disabled={insufficientPack}
+                        onClick={() => setModalPkgId(opt.id)}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 ${
+                          isSel
+                            ? 'border-[#ec1f73] bg-pink-50/70 ring-1 ring-[#ec1f73]'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold text-slate-900">{opt.unit_name}</span>
+                          {opt.conversion_factor > 1 && (
+                            <span className="text-[10px] font-mono text-indigo-700 font-semibold">
+                              ×{opt.conversion_factor} {baseUnit}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm font-mono font-bold text-[#ec1f73] mt-1 tabular-nums">
+                          {store.currency_symbol}{opt.selling_price}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono tabular-nums">
+                          MRP {store.currency_symbol}{opt.mrp} · Avail: {maxUnitsInThisTier}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Batch & Expiry Selection (if tracked) */}
+              {batches.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    Select Batch (FEFO Earliest Expiry First)
+                  </label>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {batches.map((b) => {
+                      const isSel = selBatch?.batch_number === b.batch_number;
+                      const daysLeft = getDaysUntilExpiry(b.expiry_date);
+                      const isExpired = daysLeft !== null && daysLeft < 0;
+                      const isNearExpiry = daysLeft !== null && daysLeft >= 0 && daysLeft <= 30;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          disabled={b.stock_quantity <= 0}
+                          onClick={() => setModalBatchNo(b.batch_number)}
+                          className={`w-full px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                            isSel
+                              ? 'border-amber-500 bg-amber-50/80 ring-1 ring-amber-400'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-mono font-bold text-slate-800">
+                              {b.batch_number}
+                            </span>
+                            {b.expiry_date && (
+                              <span
+                                className={`text-[11px] font-mono ${
+                                  isExpired
+                                    ? 'text-rose-700 font-bold'
+                                    : isNearExpiry
+                                    ? 'text-amber-700 font-semibold'
+                                    : 'text-slate-500'
+                                }`}
+                              >
+                                Exp: {b.expiry_date}
+                                {isExpired ? ' (EXPIRED)' : isNearExpiry ? ` (${daysLeft}d)` : ''}
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-mono font-bold text-slate-700 shrink-0 tabular-nums">
+                            {b.stock_quantity} {baseUnit}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Quantity & Base-Unit Stock Deduction Preview */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-bold text-slate-700">
+                    Quantity ({selPkg?.unit_name})
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalQty(String(Math.max(1, Math.round((parsedQty - 1) * 1000) / 1000)))
+                      }
+                      className="w-8 h-8 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 flex items-center justify-center text-slate-700 cursor-pointer"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="any"
+                      value={modalQty}
+                      onChange={(e) => setModalQty(e.target.value)}
+                      className="w-20 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-center font-mono font-bold text-sm text-slate-900 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalQty(String(Math.round((parsedQty + 1) * 1000) / 1000))
+                      }
+                      className="w-8 h-8 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 flex items-center justify-center text-slate-700 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200">
+                  <span className="text-slate-600">
+                    Stock deduction:{' '}
+                    <strong className="font-mono text-indigo-700 tabular-nums">
+                      -{baseDeduction} {baseUnit}
+                    </strong>
+                    {baseDeduction > availBase && (
+                      <span className="text-rose-600 font-bold ml-1.5">(Exceeds stock!)</span>
+                    )}
+                  </span>
+                  <span className="font-mono font-extrabold text-sm text-slate-900 tabular-nums">
+                    Total: {store.currency_symbol}{lineTotal}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPosSelectModal(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!selPkg || baseDeduction > availBase + 0.0001}
+                  onClick={() => {
+                    if (!selPkg) return;
+                    const variantWithProdName = { ...selVar, product_name: prod.name };
+                    const ok = addConfiguredItemToCart(
+                      variantWithProdName,
+                      selPkg,
+                      selBatch?.batch_number,
+                      selBatch?.expiry_date,
+                      parsedQty
+                    );
+                    if (ok) setPosSelectModal(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#ec1f73] hover:bg-[#d61665] disabled:opacity-40 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add to Cart ({store.currency_symbol}{lineTotal})</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
