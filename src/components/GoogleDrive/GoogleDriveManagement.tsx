@@ -11,6 +11,7 @@ import {
   getDriveAbout,
   getOrCreatePOSFolder,
   uploadJsonToDrive,
+  updateJsonInDrive,
   uploadFileToDrive,
   downloadDriveFileText,
   deleteDriveFile,
@@ -18,6 +19,7 @@ import {
   DriveFileItem,
   DriveStorageQuota,
 } from '../../services/googleDriveApi';
+import { QuickDriveUpdateModal } from './QuickDriveUpdateModal';
 import { DBStorage } from '../../db/storage';
 import { DatabaseBackup as IDatabaseBackup } from '../../types';
 import {
@@ -66,6 +68,9 @@ export const GoogleDriveManagement: React.FC = () => {
   const [newFolderName, setNewFolderName] = useState<string>('');
   const [fileToDelete, setFileToDelete] = useState<DriveFileItem | null>(null);
   const [fileToRestore, setFileToRestore] = useState<DriveFileItem | null>(null);
+  const [fileToUpdate, setFileToUpdate] = useState<DriveFileItem | null>(null);
+  const [showQuickUpdateModal, setShowQuickUpdateModal] = useState<boolean>(false);
+  const [isUpdatingFile, setIsUpdatingFile] = useState<boolean>(false);
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -300,6 +305,34 @@ export const GoogleDriveManagement: React.FC = () => {
     }
   };
 
+  // Overwrite / Update an existing Drive JSON backup file after explicit confirmation
+  const handleConfirmUpdateFile = async () => {
+    if (!fileToUpdate || !token) return;
+    setIsUpdatingFile(true);
+    try {
+      const backupData = DBStorage.exportFullBackup();
+      const updated = await updateJsonInDrive(fileToUpdate.id, backupData, fileToUpdate.name);
+      addAuditLog(
+        'GOOGLE_DRIVE_UPDATE',
+        'Google Drive',
+        `Updated Google Drive backup '${updated.name}' (${updated.id}) with latest POS data`
+      );
+      setStatusMessage({
+        type: 'success',
+        text: `Google Drive file '${updated.name}' updated with latest POS database successfully!`,
+      });
+      setFileToUpdate(null);
+      await loadDriveData(token, currentFolderId);
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err?.message || 'Failed to update file in Google Drive.',
+      });
+    } finally {
+      setIsUpdatingFile(false);
+    }
+  };
+
   // Navigate into folder
   const handleOpenFolder = (folder: DriveFileItem) => {
     setCurrentFolderId(folder.id);
@@ -485,7 +518,7 @@ export const GoogleDriveManagement: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-base text-slate-900">{userProfile?.displayName || 'Google Drive User'}</h3>
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                     Connected
                   </span>
                 </div>
@@ -526,7 +559,7 @@ export const GoogleDriveManagement: React.FC = () => {
           </div>
 
           {/* Quick POS Backup & Actions Bar */}
-          <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="bg-[#201c56] rounded-2xl p-5 sm:p-6 text-white border border-[#2d2775] flex flex-col md:flex-row md:items-center justify-between gap-5">
             <div className="space-y-1 max-w-xl">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-white text-[11px] font-bold uppercase tracking-wider backdrop-blur-sm">
                 <CloudUpload className="w-3.5 h-3.5 text-blue-200" />
@@ -540,12 +573,21 @@ export const GoogleDriveManagement: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-3">
               <button
+                type="button"
+                onClick={() => setShowQuickUpdateModal(true)}
+                className="px-5 py-3 bg-white text-blue-700 hover:bg-blue-50 active:scale-[0.98] font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Update Live Sync File</span>
+              </button>
+
+              <button
                 onClick={handleUploadPOSBackup}
                 disabled={isUploadingBackup}
-                className="px-5 py-3 bg-white text-blue-700 hover:bg-blue-50 active:scale-[0.98] font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
+                className="px-4 py-3 bg-white/15 hover:bg-white/25 active:scale-[0.98] text-white font-bold text-xs rounded-xl border border-white/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
               >
                 <CloudUpload className={`w-4 h-4 ${isUploadingBackup ? 'animate-bounce' : ''}`} />
-                <span>{isUploadingBackup ? 'Uploading to Drive...' : 'Upload Latest POS Backup Now'}</span>
+                <span>{isUploadingBackup ? 'Uploading Snapshot...' : 'Upload Dated Snapshot'}</span>
               </button>
 
               <button
@@ -626,129 +668,249 @@ export const GoogleDriveManagement: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-500 bg-slate-50/60 font-semibold uppercase text-[11px]">
-                      <th className="p-3">Name</th>
-                      <th className="p-3">Size</th>
-                      <th className="p-3">Modified</th>
-                      <th className="p-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {files.map((file) => {
-                      const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
-                      const isJson = file.name.endsWith('.json') || file.mimeType.includes('json');
+              <>
+                {/* Mobile Compact File Cards */}
+                <div className="md:hidden space-y-2.5">
+                  {files.map((file) => {
+                    const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+                    const isJson = file.name.endsWith('.json') || file.mimeType.includes('json');
 
-                      return (
-                        <tr key={file.id} className="hover:bg-slate-50/80 transition-colors group">
-                          {/* Name and Icon */}
-                          <td className="p-3">
-                            <div className="flex items-center gap-3">
-                              {isFolder ? (
-                                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
-                                  <Folder className="w-4 h-4" />
-                                </div>
-                              ) : isJson ? (
-                                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-                                  <FileCode className="w-4 h-4" />
-                                </div>
-                              ) : (
-                                <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 border border-slate-200">
-                                  <FileText className="w-4 h-4" />
-                                </div>
-                              )}
-
-                              <div>
-                                {isFolder ? (
-                                  <button
-                                    onClick={() => handleOpenFolder(file)}
-                                    className="font-bold text-slate-800 hover:text-blue-600 text-left transition-colors cursor-pointer flex items-center gap-1.5"
-                                  >
-                                    <span>{file.name}</span>
-                                  </button>
-                                ) : (
-                                  <div className="font-semibold text-slate-800 flex items-center gap-2">
-                                    <span>{file.name}</span>
-                                    {isJson && (
-                                      <span className="text-[10px] px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded font-mono font-bold">
-                                        BACKUP
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="text-[10px] text-slate-400 font-mono truncate max-w-xs">
-                                  ID: {file.id}
-                                </div>
+                    return (
+                      <div
+                        key={file.id}
+                        className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {isFolder ? (
+                              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
+                                <Folder className="w-4 h-4" />
                               </div>
-                            </div>
-                          </td>
-
-                          {/* Size */}
-                          <td className="p-3 font-mono text-slate-600 text-[11px]">
-                            {isFolder ? '—' : formatBytes(file.size)}
-                          </td>
-
-                          {/* Modified */}
-                          <td className="p-3 text-slate-500 text-[11px]">
-                            {file.modifiedTime
-                              ? new Date(file.modifiedTime).toLocaleDateString([], {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : '—'}
-                          </td>
-
-                          {/* Actions */}
-                          <td className="p-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* If JSON backup, show Restore button */}
-                              {isJson && (
+                            ) : isJson ? (
+                              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                                <FileCode className="w-4 h-4" />
+                              </div>
+                            ) : (
+                              <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 border border-slate-200">
+                                <FileText className="w-4 h-4" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              {isFolder ? (
                                 <button
                                   type="button"
-                                  onClick={() => setFileToRestore(file)}
-                                  className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-lg border border-emerald-200 flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Restore POS Database from this Backup"
+                                  onClick={() => handleOpenFolder(file)}
+                                  className="font-bold text-sm text-slate-900 hover:text-blue-600 text-left truncate block w-full cursor-pointer"
                                 >
-                                  <RotateCcw className="w-3.5 h-3.5" />
-                                  <span>Restore to POS</span>
+                                  {file.name}
                                 </button>
+                              ) : (
+                                <div className="font-semibold text-xs text-slate-900 truncate">
+                                  {file.name}
+                                </div>
                               )}
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                {isFolder ? 'Folder' : formatBytes(file.size)}
+                                {file.modifiedTime &&
+                                  ` · ${new Date(file.modifiedTime).toLocaleDateString()}`}
+                              </div>
+                            </div>
+                          </div>
+                          {isJson && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-mono font-bold shrink-0">
+                              BACKUP
+                            </span>
+                          )}
+                        </div>
 
-                              {/* Open in Drive link */}
-                              {file.webViewLink && (
-                                <a
-                                  href={file.webViewLink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-blue-600 rounded-lg border border-slate-200 transition-colors"
-                                  title="Open in Google Drive"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-
-                              {/* Delete button (with confirmation modal) */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-200/80">
+                          {isFolder && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenFolder(file)}
+                              className="flex-1 py-1.5 px-2.5 bg-white border border-slate-200 text-slate-800 text-[11px] font-bold rounded-lg cursor-pointer"
+                            >
+                              Open Folder
+                            </button>
+                          )}
+                          {isJson && (
+                            <>
                               <button
                                 type="button"
-                                onClick={() => setFileToDelete(file)}
-                                className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 hover:border-rose-200 transition-colors cursor-pointer"
-                                title="Delete File from Google Drive"
+                                onClick={() => setFileToUpdate(file)}
+                                className="flex-1 py-1.5 px-2.5 bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold rounded-lg inline-flex items-center justify-center gap-1 cursor-pointer"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <RefreshCw className="w-3 h-3" />
+                                <span>Update</span>
                               </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              <button
+                                type="button"
+                                onClick={() => setFileToRestore(file)}
+                                className="flex-1 py-1.5 px-2.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded-lg inline-flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>Restore</span>
+                              </button>
+                            </>
+                          )}
+                          {file.webViewLink && (
+                            <a
+                              href={file.webViewLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 bg-white text-slate-600 rounded-lg border border-slate-200"
+                              title="Open in Google Drive"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setFileToDelete(file)}
+                            className="p-1.5 bg-white text-rose-500 rounded-lg border border-slate-200 cursor-pointer"
+                            title="Delete File from Google Drive"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-500 bg-slate-50/60 font-semibold uppercase text-[11px]">
+                        <th className="p-3">Name</th>
+                        <th className="p-3">Size</th>
+                        <th className="p-3">Modified</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {files.map((file) => {
+                        const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+                        const isJson = file.name.endsWith('.json') || file.mimeType.includes('json');
+
+                        return (
+                          <tr key={file.id} className="hover:bg-slate-50/80 transition-colors group">
+                            {/* Name and Icon */}
+                            <td className="p-3">
+                              <div className="flex items-center gap-3">
+                                {isFolder ? (
+                                  <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
+                                    <Folder className="w-4 h-4" />
+                                  </div>
+                                ) : isJson ? (
+                                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                                    <FileCode className="w-4 h-4" />
+                                  </div>
+                                ) : (
+                                  <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 border border-slate-200">
+                                    <FileText className="w-4 h-4" />
+                                  </div>
+                                )}
+
+                                <div>
+                                  {isFolder ? (
+                                    <button
+                                      onClick={() => handleOpenFolder(file)}
+                                      className="font-bold text-slate-800 hover:text-blue-600 text-left transition-colors cursor-pointer flex items-center gap-1.5"
+                                    >
+                                      <span>{file.name}</span>
+                                    </button>
+                                  ) : (
+                                    <div className="font-semibold text-slate-800 flex items-center gap-2">
+                                      <span>{file.name}</span>
+                                      {isJson && (
+                                        <span className="text-[10px] px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded font-mono font-bold">
+                                          BACKUP
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  <div className="text-[10px] text-slate-400 font-mono truncate max-w-xs">
+                                    ID: {file.id}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Size */}
+                            <td className="p-3 font-mono text-slate-600 text-[11px]">
+                              {isFolder ? '—' : formatBytes(file.size)}
+                            </td>
+
+                            {/* Modified */}
+                            <td className="p-3 text-slate-500 text-[11px]">
+                              {file.modifiedTime
+                                ? new Date(file.modifiedTime).toLocaleDateString([], {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : '—'}
+                            </td>
+
+                            {/* Actions */}
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {isJson && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => setFileToUpdate(file)}
+                                      className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold rounded-lg border border-blue-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                      title="Update this Google Drive file with current POS database"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                      <span>Update File</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setFileToRestore(file)}
+                                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-lg border border-emerald-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                      title="Restore POS Database from this Backup"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                      <span>Restore to POS</span>
+                                    </button>
+                                  </>
+                                )}
+
+                                {file.webViewLink && (
+                                  <a
+                                    href={file.webViewLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-blue-600 rounded-lg border border-slate-200 transition-colors"
+                                    title="Open in Google Drive"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => setFileToDelete(file)}
+                                  className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg border border-slate-200 hover:border-rose-200 transition-colors cursor-pointer"
+                                  title="Delete File from Google Drive"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -878,6 +1040,57 @@ export const GoogleDriveManagement: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mandatory User Confirmation Modal for UPDATING / OVERWRITING an existing Drive file */}
+      {fileToUpdate && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full max-h-[92vh] overflow-y-auto shadow-2xl space-y-4 text-slate-800">
+            <div className="flex items-center gap-2 text-blue-600 font-bold text-base">
+              <CloudUpload className="w-5 h-5 shrink-0" />
+              <span>Update Existing Google Drive File?</span>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to update <strong className="text-slate-900">"{fileToUpdate.name}"</strong> in Google Drive with your latest offline POS database snapshot? The existing file content in Drive will be overwritten.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isUpdatingFile}
+                onClick={() => setFileToUpdate(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isUpdatingFile}
+                onClick={handleConfirmUpdateFile}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isUpdatingFile ? 'animate-spin' : ''}`} />
+                <span>{isUpdatingFile ? 'Updating File...' : 'Confirm & Update File'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQuickUpdateModal && (
+        <QuickDriveUpdateModal
+          onClose={() => setShowQuickUpdateModal(false)}
+          onSyncComplete={({ file, action }) => {
+            setStatusMessage({
+              type: 'success',
+              text: `Google Drive live sync file '${file.name}' ${
+                action === 'updated' ? 'updated' : 'created'
+              } successfully!`,
+            });
+            loadDriveData(token || undefined, currentFolderId);
+          }}
+        />
       )}
     </div>
   );

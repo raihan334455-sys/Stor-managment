@@ -15,6 +15,7 @@ import {
   CashSession,
   AuditLog,
   StockTransaction,
+  StockAdjustmentRecord,
   StockTransfer,
   SaleReturn,
   Quotation,
@@ -96,6 +97,7 @@ const KEYS = {
   CASH_SESSIONS: 'pos_cash_sessions',
   AUDIT_LOGS: 'pos_audit_logs',
   STOCK_TRANSACTIONS: 'pos_stock_transactions',
+  STOCK_ADJUSTMENTS: 'pos_stock_adjustments',
   STOCK_TRANSFERS: 'pos_stock_transfers',
   RETURNS: 'pos_returns',
   QUOTATIONS: 'pos_quotations',
@@ -271,6 +273,7 @@ export class DBStorage {
       hydrateKey(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]),
       hydrateKey(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS),
       hydrateKey(KEYS.STOCK_TRANSACTIONS, INITIAL_STOCK_TRANSACTIONS),
+      hydrateKey(KEYS.STOCK_ADJUSTMENTS, [] as StockAdjustmentRecord[]),
       hydrateKey(KEYS.STOCK_TRANSFERS, [] as StockTransfer[]),
       hydrateKey(KEYS.RETURNS, [] as SaleReturn[]),
       hydrateKey(KEYS.QUOTATIONS, [] as Quotation[]),
@@ -322,6 +325,16 @@ export class DBStorage {
     }
     if (next.module_general_product_enabled === undefined) {
       next.module_general_product_enabled = true;
+      updated = true;
+    }
+    if (next.business_mode === undefined) {
+      if (next.module_medicine_enabled === false && next.module_general_product_enabled !== false) {
+        next.business_mode = 'general_shop';
+      } else if (next.module_medicine_enabled !== false && next.module_general_product_enabled === false) {
+        next.business_mode = 'pharmacy';
+      } else {
+        next.business_mode = 'super_shop';
+      }
       updated = true;
     }
     if (next.auto_backup_enabled === undefined) {
@@ -583,6 +596,14 @@ export class DBStorage {
     setItem(KEYS.PURCHASE_RETURNS, returnsList);
   }
 
+  // Stock Adjustments & Personal Use
+  static getStockAdjustments(): StockAdjustmentRecord[] {
+    return getItem(KEYS.STOCK_ADJUSTMENTS, []);
+  }
+  static saveStockAdjustments(adjustments: StockAdjustmentRecord[]): void {
+    setItem(KEYS.STOCK_ADJUSTMENTS, adjustments);
+  }
+
   // Stock Transfers
   static getStockTransfers(): StockTransfer[] {
     return getItem(KEYS.STOCK_TRANSFERS, []);
@@ -665,6 +686,7 @@ export class DBStorage {
       purchase_returns: this.getPurchaseReturns(),
       sales: this.getSales(),
       stock_transactions: this.getStockTransactions(),
+      stock_adjustments: this.getStockAdjustments(),
       stock_transfers: this.getStockTransfers(),
       returns: this.getReturns(),
       expenses: this.getExpenses(),
@@ -745,6 +767,7 @@ export class DBStorage {
       if (backup.purchase_returns) this.savePurchaseReturns(backup.purchase_returns);
       if (backup.sales) this.saveSales(backup.sales);
       if (backup.stock_transactions) this.saveStockTransactions(backup.stock_transactions);
+      if (backup.stock_adjustments) this.saveStockAdjustments(backup.stock_adjustments);
       if (backup.stock_transfers) this.saveStockTransfers(backup.stock_transfers);
       if (backup.returns) this.saveReturns(backup.returns);
       if (backup.expenses) this.saveExpenses(backup.expenses);
@@ -784,6 +807,7 @@ export class DBStorage {
     setItem(KEYS.PURCHASES, []);
     setItem(KEYS.PURCHASE_RETURNS, []);
     setItem(KEYS.STOCK_TRANSACTIONS, []);
+    setItem(KEYS.STOCK_ADJUSTMENTS, []);
     setItem(KEYS.STOCK_TRANSFERS, []);
     setItem(KEYS.RETURNS, []);
     setItem(KEYS.EXPENSES, []);
@@ -843,6 +867,7 @@ export class DBStorage {
     setItem(KEYS.PURCHASE_RETURNS, []);
     setItem(KEYS.SALES, []);
     setItem(KEYS.STOCK_TRANSACTIONS, []);
+    setItem(KEYS.STOCK_ADJUSTMENTS, []);
     setItem(KEYS.STOCK_TRANSFERS, []);
     setItem(KEYS.RETURNS, []);
     setItem(KEYS.EXPENSES, []);

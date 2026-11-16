@@ -79,6 +79,7 @@ export const POSView: React.FC = () => {
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'general' | 'medicine'>('all');
 
   // Mobile / Tablet Cart Drawer State
   const [isCartOpenMobile, setIsCartOpenMobile] = useState<boolean>(false);
@@ -151,9 +152,17 @@ export const POSView: React.FC = () => {
     return () => clearTimeout(t);
   }, [scanFeedback]);
 
+  const isBn = store.language === 'bn';
   const medEnabled = isMedicineModuleEnabled(store);
   const genEnabled = isGeneralProductModuleEnabled(store);
-  const visibleCategories = categories.filter((c) => isCategoryEnabled(c, store));
+  const visibleCategories = categories.filter((c) => {
+    if (!isCategoryEnabled(c, store)) return false;
+    if (medEnabled && genEnabled) {
+      if (typeFilter === 'general' && c.id === 'cat_medicine') return false;
+      if (typeFilter === 'medicine' && c.id === 'cat_general') return false;
+    }
+    return true;
+  });
 
   // Filter Active Products & Flatten Variants (respecting enabled modules)
   const activeProducts = products.filter(
@@ -180,6 +189,10 @@ export const POSView: React.FC = () => {
   );
 
   const filteredVariants = allVariants.filter((v) => {
+    const matchesType =
+      !(medEnabled && genEnabled) ||
+      typeFilter === 'all' ||
+      (typeFilter === 'medicine' ? Boolean(v.is_medicine) : !v.is_medicine);
     const matchesCategory =
       selectedCategoryId === 'all' || v.category_id === selectedCategoryId;
     const q = searchQuery.toLowerCase().trim();
@@ -189,16 +202,16 @@ export const POSView: React.FC = () => {
       v.variant_name.toLowerCase().includes(q) ||
       v.barcode.toLowerCase().includes(q) ||
       v.sku.toLowerCase().includes(q) ||
-      (v.generic_name || '').toLowerCase().includes(q) ||
+      (medEnabled && (v.generic_name || '').toLowerCase().includes(q)) ||
       (v.brand_name || '').toLowerCase().includes(q) ||
-      (v.company_name || '').toLowerCase().includes(q) ||
-      (v.strength || '').toLowerCase().includes(q) ||
-      (v.medicine_type || '').toLowerCase().includes(q) ||
+      (medEnabled && (v.company_name || '').toLowerCase().includes(q)) ||
+      (medEnabled && (v.strength || '').toLowerCase().includes(q)) ||
+      (medEnabled && (v.medicine_type || '').toLowerCase().includes(q)) ||
       (v.rack_number || '').toLowerCase().includes(q) ||
-      (v.batch_number || '').toLowerCase().includes(q) ||
+      (medEnabled && (v.batch_number || '').toLowerCase().includes(q)) ||
       (v.packaging_units || []).some((pu) => (pu.barcode || '').toLowerCase().includes(q)) ||
       (v.batches || []).some((b) => b.batch_number.toLowerCase().includes(q));
-    return matchesCategory && matchesQuery;
+    return matchesType && matchesCategory && matchesQuery;
   });
 
   // Extract barcode/SKU candidates from plain barcode/SKU text, JSON QR, or URL QR
@@ -848,7 +861,7 @@ export const POSView: React.FC = () => {
                   <div>
                     <div className="text-xs font-bold text-slate-800">{c.name}</div>
                     <div className="text-[10px] text-slate-500">
-                      {c.mobile} • কেনা পণ্য: <strong className="text-[#5b46b5]">{cStats.totalProductQuantity} টি</strong> ({cStats.totalOrders} অর্ডার)
+                      {c.mobile} • কেনা পণ্য: <strong className="text-emerald-700">{cStats.totalProductQuantity} টি</strong> ({cStats.totalOrders} অর্ডার)
                     </div>
                   </div>
                   {c.total_due_amount > 0 && (
@@ -869,7 +882,7 @@ export const POSView: React.FC = () => {
         {selectedCustomer && (() => {
           const sStats = getMobilePurchaseStats(selectedCustomer.mobile, sales, selectedCustomer.id);
           return (
-            <div className="mt-2 px-2.5 py-1.5 bg-violet-50 border border-violet-200 rounded-lg flex items-center justify-between gap-2 text-[11px] text-[#5b46b5]">
+            <div className="mt-2 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between gap-2 text-[11px] text-emerald-800">
               <span className="font-semibold truncate">
                 মোবাইল ({selectedCustomer.mobile}) মোট কেনা:
               </span>
@@ -924,9 +937,9 @@ export const POSView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => updateQuantity(idx, item.quantity - 1)}
-                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer"
+                    className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer"
                   >
-                    <Minus className="w-3 h-3" />
+                    <Minus className="w-3.5 h-3.5" />
                   </button>
 
                   <button
@@ -936,7 +949,7 @@ export const POSView: React.FC = () => {
                       setCustomQtyInput(item.quantity.toString());
                       setShowWeightModal(true);
                     }}
-                    className="px-2 py-0.5 bg-slate-50 border border-slate-200 hover:border-blue-500 text-blue-700 font-mono font-bold text-xs rounded min-w-[44px] text-center cursor-pointer tabular-nums"
+                    className="px-2 py-1 bg-slate-50 border border-slate-200 hover:border-emerald-500 text-emerald-700 font-mono font-bold text-xs rounded-lg min-w-[48px] min-h-[32px] text-center cursor-pointer tabular-nums"
                     title="Click to enter custom or decimal quantity"
                   >
                     {item.quantity} {item.unit}
@@ -945,9 +958,9 @@ export const POSView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => updateQuantity(idx, item.quantity + 1)}
-                    className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer"
+                    className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer"
                   >
-                    <Plus className="w-3 h-3" />
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
@@ -1008,7 +1021,7 @@ export const POSView: React.FC = () => {
                   )}
 
                   {factor !== 1 && (
-                    <span className="font-mono text-indigo-700 font-semibold ml-auto tabular-nums">
+                    <span className="font-mono text-emerald-700 font-semibold ml-auto tabular-nums">
                       Stock: -{totalBaseDeduction} {baseUnit}
                     </span>
                   )}
@@ -1057,7 +1070,7 @@ export const POSView: React.FC = () => {
 
           <div className="flex justify-between text-base font-bold text-slate-900 pt-2 border-t border-slate-200">
             <span>GRAND TOTAL:</span>
-            <span className="font-mono text-blue-700 text-lg">
+            <span className="font-mono text-emerald-700 text-lg">
               {store.currency_symbol}
               {grandTotal}
             </span>
@@ -1099,7 +1112,7 @@ export const POSView: React.FC = () => {
         <button
           disabled={cartItems.length === 0}
           onClick={handleOpenPayment}
-          className="w-full py-3 rounded-xl bg-[#ec1f73] hover:bg-[#d61665] text-white font-bold text-sm shadow flex items-center justify-center gap-2 transition-all disabled:opacity-40 cursor-pointer"
+          className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-40 cursor-pointer min-h-[44px]"
         >
           <Banknote className="w-4 h-4" />
           <span>PAY ({store.currency_symbol}{grandTotal})</span>
@@ -1109,11 +1122,11 @@ export const POSView: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col xl:flex-row xl:h-[calc(100vh-8.5rem)] min-h-[540px] bg-[#fafafc] xl:overflow-hidden select-none text-slate-800 relative max-w-[1440px] mx-auto w-full">
+    <div className="flex flex-col xl:flex-row xl:h-full min-h-[540px] bg-slate-50 xl:overflow-hidden select-none text-slate-800 relative max-w-[1440px] mx-auto w-full">
       {/* LEFT / CENTER: PRODUCT & VARIANT CATALOG GRID */}
-      <div className="flex-1 flex flex-col p-3 sm:p-4 xl:overflow-hidden xl:border-r border-slate-200">
+      <div className="flex-1 flex flex-col p-3 sm:p-4 xl:overflow-hidden xl:border-r border-slate-200 min-w-0">
         {/* Top Filter Bar */}
-        <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mb-3">
           {/* Search & Barcode Scan Input */}
           <form onSubmit={handleBarcodeSubmit} className="relative flex-1 w-full">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1124,10 +1137,10 @@ export const POSView: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={
                 medEnabled
-                  ? 'Scan QR/Barcode or Search Product/Medicine (Name, Generic, Company, Rack, Barcode)...'
-                  : 'Scan QR/Barcode or Search Product (Name, Brand, Rack, Barcode)...'
+                  ? 'Scan QR/Barcode or search Product, Generic, Company, Rack...'
+                  : 'Scan QR/Barcode or search Product, Brand, Rack...'
               }
-              className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800 placeholder-slate-400 rounded-xl pl-10 pr-24 py-2 text-xs focus:outline-none transition-all shadow-sm"
+              className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-slate-800 placeholder-slate-400 rounded-xl pl-10 pr-24 py-2.5 text-xs focus:outline-none transition-colors min-h-[44px]"
             />
             <button
               type="button"
@@ -1136,7 +1149,7 @@ export const POSView: React.FC = () => {
                 setShowScannerModal(true);
               }}
               title="Open QR & Barcode Camera Scanner"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[11px] font-bold text-white bg-[#5b46b5] hover:bg-[#4a379c] px-2.5 py-1 rounded-lg shadow-xs transition-colors cursor-pointer"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg transition-colors cursor-pointer"
             >
               <QrCode className="w-3.5 h-3.5" />
               <span>SCAN</span>
@@ -1147,12 +1160,10 @@ export const POSView: React.FC = () => {
           {heldCarts.length > 0 && (
             <button
               onClick={() => setShowHeldModal(true)}
-              className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-semibold text-xs flex items-center gap-1.5 transition-colors shrink-0 shadow-sm"
+              className="px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors shrink-0 min-h-[44px] cursor-pointer"
             >
               <PauseCircle className="w-4 h-4 text-amber-600" />
-              <span>
-                Held Queue ({heldCarts.length})
-              </span>
+              <span>Held Queue ({heldCarts.length})</span>
             </button>
           )}
         </div>
@@ -1188,7 +1199,7 @@ export const POSView: React.FC = () => {
         {recentDueSaleAlert && (
           <div className="mb-3 p-3 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900 shadow-xs">
             <div className="flex items-center gap-2">
-              <BellRing className="w-4 h-4 text-[#ec1f73] shrink-0" />
+              <BellRing className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>
                 <strong>{recentDueSaleAlert.customer.name}</strong> ({recentDueSaleAlert.invoiceNumber}) — নতুন বাকি:{' '}
                 <strong className="font-mono text-rose-700">
@@ -1205,7 +1216,7 @@ export const POSView: React.FC = () => {
                     invoiceNumber: recentDueSaleAlert.invoiceNumber,
                   })
                 }
-                className="px-3 py-1.5 rounded-lg bg-[#ec1f73] hover:bg-[#d61665] text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
               >
                 <BellRing className="w-3.5 h-3.5" />
                 <span>Send SMS / WhatsApp Alert</span>
@@ -1221,35 +1232,85 @@ export const POSView: React.FC = () => {
           </div>
         )}
 
-        {/* Category Pills Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-3 scrollbar-none shrink-0">
-          <button
-            onClick={() => setSelectedCategoryId('all')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-              selectedCategoryId === 'all'
-                ? 'bg-[#ec1f73] text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            All Categories
-          </button>
-          {visibleCategories.map((cat) => (
+        {/* Type Filter (Super Shop) & Category Filter Tabs */}
+        <div className="flex flex-col gap-2 pb-2 mb-2.5 shrink-0">
+          {medEnabled && genEnabled && (
+            <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5">
+              {(
+                [
+                  {
+                    id: 'all',
+                    shortLabel: isBn ? 'সব পণ্য' : 'All Items',
+                    fullLabel: isBn ? 'সব পণ্য' : 'All Items',
+                  },
+                  {
+                    id: 'general',
+                    shortLabel: isBn ? 'সাধারণ' : 'General',
+                    fullLabel: isBn ? 'সাধারণ পণ্য' : 'General Products',
+                  },
+                  {
+                    id: 'medicine',
+                    shortLabel: isBn ? 'ওষুধ' : 'Medicine',
+                    fullLabel: isBn ? 'ওষুধ' : 'Medicine',
+                  },
+                ] as const
+              ).map((tf) => (
+                <button
+                  key={tf.id}
+                  type="button"
+                  onClick={() => {
+                    setTypeFilter(tf.id);
+                    if (
+                      (tf.id === 'general' && selectedCategoryId === 'cat_medicine') ||
+                      (tf.id === 'medicine' && selectedCategoryId === 'cat_general')
+                    ) {
+                      setSelectedCategoryId('all');
+                    }
+                  }}
+                  className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-semibold text-center leading-tight transition-colors cursor-pointer min-h-[36px] flex items-center justify-center ${
+                    typeFilter === tf.id
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <span className="sm:hidden">{tf.shortLabel}</span>
+                  <span className="hidden sm:inline">{tf.fullLabel}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              key={cat.id}
-              onClick={() => setSelectedCategoryId(cat.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                selectedCategoryId === cat.id
-                  ? 'bg-[#ec1f73] text-white shadow-sm'
+              type="button"
+              onClick={() => setSelectedCategoryId('all')}
+              className={`px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-semibold leading-tight transition-colors cursor-pointer min-h-[34px] sm:min-h-[36px] ${
+                selectedCategoryId === 'all'
+                  ? 'bg-emerald-600 text-white'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
               }`}
             >
-              {cat.name}
+              {isBn ? 'সব ক্যাটাগরি' : 'All Categories'}
             </button>
-          ))}
+            {visibleCategories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategoryId(cat.id)}
+                className={`px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-semibold leading-tight text-left break-words max-w-full transition-colors cursor-pointer min-h-[34px] sm:min-h-[36px] ${
+                  selectedCategoryId === cat.id
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Product Variant Grid */}
-        <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5 gap-3 pr-1 pb-24 xl:pb-2">
+        <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 pr-1 pb-28 md:pb-24 xl:pb-2">
           {filteredVariants.map((variant) => {
             const isOutOfStock = variant.stock_quantity <= 0;
             const isLowStock = variant.stock_quantity <= variant.min_stock_level && !isOutOfStock;
@@ -1263,10 +1324,10 @@ export const POSView: React.FC = () => {
                 key={variant.id}
                 disabled={isOutOfStock}
                 onClick={() => handleCatalogCardClick(variant)}
-                className={`group relative bg-white border rounded-xl p-3 text-left flex flex-col justify-between transition-all shadow-sm ${
+                className={`group relative bg-white border rounded-xl p-3 text-left flex flex-col justify-between transition-all ${
                   isOutOfStock
                     ? 'opacity-50 border-slate-200 cursor-not-allowed bg-slate-50'
-                    : 'border-slate-200 hover:border-blue-500 hover:shadow-md cursor-pointer'
+                    : 'border-slate-200 hover:border-emerald-500 cursor-pointer'
                 }`}
               >
                 {/* Product Image or Fallback */}
@@ -1313,23 +1374,36 @@ export const POSView: React.FC = () => {
                     <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider line-clamp-1">
                       {variant.barcode}
                     </span>
-                    {variant.rack_number && (
-                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
-                        {variant.rack_number}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {medEnabled && genEnabled && (
+                        <span
+                          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${
+                            variant.is_medicine
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          {variant.is_medicine ? 'Med' : 'Item'}
+                        </span>
+                      )}
+                      {variant.rack_number && (
+                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                          {variant.rack_number}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <h4 className="font-bold text-xs text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight">
+                  <h4 className="font-bold text-xs text-slate-800 group-hover:text-emerald-700 transition-colors line-clamp-2 leading-tight">
                     {variant.product_name}
                     {medEnabled && variant.strength && (
-                      <span className="ml-1 text-[10px] font-mono font-semibold text-indigo-700">
+                      <span className="ml-1 text-[10px] font-mono font-semibold text-emerald-700">
                         {variant.strength}
                       </span>
                     )}
                   </h4>
                   {medEnabled && (variant.medicine_type || variant.generic_name) && (
-                    <p className="text-[10px] text-teal-700 font-medium line-clamp-1 mt-0.5">
+                    <p className="text-[10px] text-emerald-700 font-medium line-clamp-1 mt-0.5">
                       {variant.medicine_type ? `${variant.medicine_type}` : ''}
                       {variant.medicine_type && variant.generic_name ? ' · ' : ''}
                       {variant.generic_name || ''}
@@ -1340,9 +1414,9 @@ export const POSView: React.FC = () => {
                     {medEnabled && variant.company_name ? ` • ${variant.company_name}` : ''}
                   </p>
                   {hasMultiOptions && (
-                    <p className="text-[10px] text-[#5b46b5] font-semibold line-clamp-1 mt-0.5">
+                    <p className="text-[10px] text-emerald-700 font-semibold line-clamp-1 mt-0.5">
                       {pkgOpts.map((p) => p.unit_name).join(' · ')}
-                      {batchList.length > 1 ? ` · ${batchList.length} Batches` : ''}
+                      {medEnabled && batchList.length > 1 ? ` · ${batchList.length} Batches` : ''}
                     </p>
                   )}
                 </div>
@@ -1361,7 +1435,7 @@ export const POSView: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className="w-6 h-6 rounded-md bg-slate-100 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center text-slate-600 transition-all shrink-0">
+                  <div className="w-7 h-7 rounded-md bg-slate-100 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center text-slate-600 transition-all shrink-0">
                     <Plus className="w-3.5 h-3.5" />
                   </div>
                 </div>
@@ -1392,30 +1466,30 @@ export const POSView: React.FC = () => {
         {renderCartBody(false)}
       </div>
 
-      {/* MOBILE / TABLET FLOATING DOCKED CART BUTTON (visible on mobile/tablet only) */}
-      <div className="fixed bottom-6 right-4 sm:right-6 z-30 xl:hidden">
+      {/* MOBILE / TABLET FLOATING DOCKED CART BUTTON (sits cleanly above MobileBottomNav) */}
+      <div className="fixed bottom-20 md:bottom-5 right-3 sm:right-5 z-30 xl:hidden">
         <button
           onClick={() => setIsCartOpenMobile(true)}
-          className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-[#5b46b5] to-[#ec1f73] hover:opacity-95 text-white rounded-2xl shadow-xl ring-4 ring-white active:scale-95 transition-all group"
+          className="flex items-center gap-3 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl border border-emerald-500 min-h-[48px] cursor-pointer"
           title="Open Cart"
         >
           <div className="relative">
-            <ShoppingCart className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <ShoppingCart className="w-5 h-5" />
             {cartItems.length > 0 && (
-              <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] font-extrabold min-w-4 h-4 px-1 rounded-full flex items-center justify-center ring-2 ring-white">
+              <span className="absolute -top-2 -right-2 bg-rose-600 text-white text-[10px] font-bold min-w-4 h-4 px-1 rounded-full flex items-center justify-center">
                 {cartItems.reduce((acc, i) => acc + (i.quantity >= 1 ? Math.floor(i.quantity) : 1), 0)}
               </span>
             )}
           </div>
           <div className="text-left font-sans">
-            <div className="text-[10px] uppercase font-bold tracking-wider opacity-90 leading-tight">
+            <div className="text-[10px] uppercase font-semibold tracking-wider opacity-90 leading-tight">
               {cartItems.length === 0 ? 'Cart Empty' : `${cartItems.length} Item(s)`}
             </div>
-            <div className="text-sm font-extrabold font-mono leading-tight">
+            <div className="text-sm font-bold font-mono leading-tight">
               {store.currency_symbol}{grandTotal}
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 ml-0.5 opacity-80 group-hover:translate-x-0.5 transition-transform" />
+          <ChevronRight className="w-4 h-4 ml-0.5 opacity-80" />
         </button>
       </div>
 
@@ -1572,7 +1646,7 @@ export const POSView: React.FC = () => {
           <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full text-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-[#ec1f73]" />
+                <UserPlus className="w-5 h-5 text-emerald-600" />
                 <h3 className="text-base font-bold text-slate-800">Register New Customer</h3>
               </div>
               <button
@@ -1615,7 +1689,7 @@ export const POSView: React.FC = () => {
                   value={newCustName}
                   onChange={(e) => setNewCustName(e.target.value)}
                   placeholder="e.g. Rahim Ahmed"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#5b46b5]"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-emerald-600"
                 />
               </div>
 
@@ -1627,7 +1701,7 @@ export const POSView: React.FC = () => {
                   value={newCustMobile}
                   onChange={(e) => setNewCustMobile(e.target.value)}
                   placeholder="e.g. 01712345678"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#5b46b5] font-mono"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-emerald-600 font-mono"
                 />
               </div>
 
@@ -1639,12 +1713,12 @@ export const POSView: React.FC = () => {
                     : undefined;
                 if (!existingMatch) return null;
                 return (
-                  <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-center justify-between gap-2">
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="font-bold truncate">
                         Existing: {existingMatch.name}
                       </div>
-                      <div className="text-[11px] text-blue-700">
+                      <div className="text-[11px] text-emerald-700">
                         Previous Due: {store.currency_symbol}{existingMatch.total_due_amount}
                       </div>
                     </div>
@@ -1659,7 +1733,7 @@ export const POSView: React.FC = () => {
                           executeCheckoutForCustomer(existingMatch);
                         }
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shrink-0 cursor-pointer"
                     >
                       {pendingDueCheckout ? 'Select & Complete' : 'Select Existing'}
                     </button>
@@ -1675,20 +1749,20 @@ export const POSView: React.FC = () => {
                     value={newCustAddress}
                     onChange={(e) => setNewCustAddress(e.target.value)}
                     placeholder="e.g. Mirpur, Dhaka"
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#5b46b5]"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-[#5b46b5]" />
+                    <Calendar className="w-3 h-3 text-emerald-600" />
                     <span>Due Pay Date (Optional)</span>
                   </label>
                   <input
                     type="date"
                     value={newCustPromiseDate}
                     onChange={(e) => setNewCustPromiseDate(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#5b46b5]"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
               </div>
@@ -1700,7 +1774,7 @@ export const POSView: React.FC = () => {
                   value={newCustEmail}
                   onChange={(e) => setNewCustEmail(e.target.value)}
                   placeholder="customer@email.com"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#5b46b5]"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-emerald-600"
                 />
               </div>
 
@@ -1720,7 +1794,7 @@ export const POSView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#ec1f73] hover:bg-[#d61665] text-white text-xs font-bold shadow transition-colors cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer min-h-[44px]"
                 >
                   {pendingDueCheckout ? 'Save & Complete Due Sale' : 'Save & Select Customer'}
                 </button>
@@ -1918,7 +1992,7 @@ export const POSView: React.FC = () => {
                             setShowPaymentModal(false);
                             setShowAddCustomerModal(true);
                           }}
-                          className="w-full py-2 rounded-lg bg-[#5b46b5] hover:bg-[#4b389b] text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <UserPlus className="w-3.5 h-3.5" />
                           <span>Register New Customer Now</span>
@@ -2002,15 +2076,15 @@ export const POSView: React.FC = () => {
                       className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
                     />
                   ) : (
-                    <div className="w-11 h-11 rounded-xl bg-indigo-50 text-[#5b46b5] flex items-center justify-center border border-indigo-100 shrink-0">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100 shrink-0">
                       <Layers className="w-5 h-5" />
                     </div>
                   )}
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-slate-900 truncate">{prod.name}</h3>
                     <p className="text-[11px] text-slate-500 truncate">
-                      {prod.generic_name ? `${prod.generic_name} · ` : ''}
-                      {prod.company_name || prod.brand_name || 'Select variant, pack & batch'}
+                      {medEnabled && prod.generic_name ? `${prod.generic_name} · ` : ''}
+                      {(medEnabled ? prod.company_name : undefined) || prod.brand_name || 'Select variant & packaging'}
                       {prod.rack_number ? ` · Rack ${prod.rack_number}` : ''}
                     </p>
                   </div>
@@ -2049,14 +2123,14 @@ export const POSView: React.FC = () => {
                           }}
                           className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                             isSel
-                              ? 'border-[#5b46b5] bg-indigo-50/70 ring-1 ring-[#5b46b5]'
+                              ? 'border-emerald-600 bg-emerald-50/70 ring-1 ring-emerald-600'
                               : 'border-slate-200 bg-white hover:bg-slate-50'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-1">
                             <span className="text-xs font-bold text-slate-800 truncate">
                               {v.variant_name}
-                              {v.strength ? ` (${v.strength})` : ''}
+                              {medEnabled && v.strength ? ` (${v.strength})` : ''}
                             </span>
                             <span className="text-[10px] font-mono text-slate-500 shrink-0 tabular-nums">
                               {v.stock_quantity} {vBase}
@@ -2095,19 +2169,19 @@ export const POSView: React.FC = () => {
                         onClick={() => setModalPkgId(opt.id)}
                         className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 ${
                           isSel
-                            ? 'border-[#ec1f73] bg-pink-50/70 ring-1 ring-[#ec1f73]'
+                            ? 'border-emerald-600 bg-emerald-50/70 ring-1 ring-emerald-600'
                             : 'border-slate-200 bg-white hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <span className="text-xs font-bold text-slate-900">{opt.unit_name}</span>
                           {opt.conversion_factor > 1 && (
-                            <span className="text-[10px] font-mono text-indigo-700 font-semibold">
+                            <span className="text-[10px] font-mono text-emerald-700 font-semibold">
                               ×{opt.conversion_factor} {baseUnit}
                             </span>
                           )}
                         </div>
-                        <div className="text-sm font-mono font-bold text-[#ec1f73] mt-1 tabular-nums">
+                        <div className="text-sm font-mono font-bold text-emerald-700 mt-1 tabular-nums">
                           {store.currency_symbol}{opt.selling_price}
                         </div>
                         <div className="text-[10px] text-slate-500 font-mono tabular-nums">
@@ -2211,7 +2285,7 @@ export const POSView: React.FC = () => {
                 <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200">
                   <span className="text-slate-600">
                     Stock deduction:{' '}
-                    <strong className="font-mono text-indigo-700 tabular-nums">
+                    <strong className="font-mono text-emerald-700 tabular-nums">
                       -{baseDeduction} {baseUnit}
                     </strong>
                     {baseDeduction > availBase && (
@@ -2228,7 +2302,7 @@ export const POSView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPosSelectModal(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer min-h-[44px]"
                 >
                   Cancel
                 </button>
@@ -2247,7 +2321,7 @@ export const POSView: React.FC = () => {
                     );
                     if (ok) setPosSelectModal(null);
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-[#ec1f73] hover:bg-[#d61665] disabled:opacity-40 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer min-h-[44px]"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add to Cart ({store.currency_symbol}{lineTotal})</span>

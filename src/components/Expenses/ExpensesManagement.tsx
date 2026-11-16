@@ -39,6 +39,13 @@ export const ExpensesManagement: React.FC = () => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+
+  const showNotice = (text: string, type: 'error' | 'success' = 'success') => {
+    setFeedback({ type, text });
+    setTimeout(() => setFeedback(null), 3500);
+  };
 
   // New Expense Form
   const [title, setTitle] = useState('');
@@ -52,13 +59,14 @@ export const ExpensesManagement: React.FC = () => {
 
   const handleSaveExpense = (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
     const numAmount = parseFloat(amount);
     if (!numAmount || numAmount <= 0) {
-      alert('Please enter a valid expense amount.');
+      setModalError('Please enter a valid expense amount.');
       return;
     }
     if (!title.trim()) {
-      alert('Please enter an expense title.');
+      setModalError('Please enter an expense title.');
       return;
     }
 
@@ -84,6 +92,7 @@ export const ExpensesManagement: React.FC = () => {
     setVoucherNumber('');
     setServiceProvider('');
     setNotes('');
+    showNotice('Daily expense recorded successfully.');
   };
 
   const handlePayRecurring = (rec: RecurringExpense) => {
@@ -101,7 +110,7 @@ export const ExpensesManagement: React.FC = () => {
       created_by: activeUser.name,
       branch_id: store.branch_id,
     });
-    alert(`Recorded ৳${rec.amount} payment for '${rec.title}' as daily expense.`);
+    showNotice(`Recorded ${store.currency_symbol}${rec.amount.toLocaleString()} payment for '${rec.title}'.`);
   };
 
   // Calculations
@@ -141,13 +150,33 @@ export const ExpensesManagement: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => {
+            setModalError(null);
+            setShowAddModal(true);
+          }}
           className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 transition-colors self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           <span>Record New Expense</span>
         </button>
       </div>
+
+      {feedback && (
+        <div
+          className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 border ${
+            feedback.type === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          }`}
+        >
+          {feedback.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          ) : (
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+          )}
+          <span>{feedback.text}</span>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -258,7 +287,53 @@ export const ExpensesManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Compact Cards */}
+          <div className="md:hidden space-y-2.5">
+            {filteredExpenses.map((exp) => (
+              <div
+                key={exp.id}
+                className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-mono text-[11px] font-bold text-blue-600">
+                      {exp.expense_number}
+                    </div>
+                    <div className="font-bold text-sm text-slate-900 truncate">{exp.title}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-mono font-bold text-sm text-rose-600 tabular-nums">
+                      {store.currency_symbol}
+                      {exp.amount.toLocaleString()}
+                    </div>
+                    <span className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-white text-slate-700 border border-slate-200">
+                      {exp.payment_method}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-2 border-t border-slate-200/80">
+                  <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 font-medium">
+                    {exp.category_name}
+                  </span>
+                  <span className="font-mono">
+                    {exp.date} · {exp.created_by}
+                  </span>
+                </div>
+                {exp.voucher_number && (
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    Voucher: #{exp.voucher_number}
+                  </div>
+                )}
+              </div>
+            ))}
+            {filteredExpenses.length === 0 && (
+              <div className="p-8 text-center text-slate-400 text-xs">
+                No expenses found for the selected filter.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">
@@ -296,7 +371,7 @@ export const ExpensesManagement: React.FC = () => {
                         {exp.payment_method}
                       </span>
                     </td>
-                    <td className="p-3 text-right font-mono font-bold text-rose-600">
+                    <td className="p-3 text-right font-mono font-bold text-rose-600 tabular-nums">
                       {store.currency_symbol}
                       {exp.amount.toLocaleString()}
                     </td>
@@ -378,6 +453,12 @@ export const ExpensesManagement: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveExpense} className="space-y-4">
+              {modalError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{modalError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Expense Title / Item *</label>
                 <input

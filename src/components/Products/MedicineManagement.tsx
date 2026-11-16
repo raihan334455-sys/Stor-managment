@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Pill,
@@ -25,7 +25,6 @@ import {
   BatchLot,
   Category,
   GenericItem,
-  MedicineType,
   PackagingUnitConfig,
   PharmaCompany,
   Product,
@@ -37,6 +36,12 @@ import {
   getVariantBatches,
   getVariantPackagingOptions,
 } from '../../utils/packaging';
+import {
+  ALL_DOSAGE_FORMS,
+  DOSAGE_FORM_GROUPS,
+  MEDICINE_BASE_UNITS,
+  getDefaultBaseUnitForDosage,
+} from '../../utils/dosageForms';
 
 type MedicineSubTab =
   | 'list'
@@ -47,18 +52,6 @@ type MedicineSubTab =
   | 'expiry'
   | 'stock'
   | 'barcode';
-
-const MEDICINE_TYPES: MedicineType[] = [
-  'Tablet',
-  'Capsule',
-  'Syrup',
-  'Injection',
-  'Drop',
-  'Ointment',
-  'Inhaler',
-  'Powder',
-  'Suppository',
-];
 
 const renderBarcodeSvg = (code: string) => {
   const safeCode = code || '00000000';
@@ -96,7 +89,7 @@ const renderBarcodeSvg = (code: string) => {
   );
 };
 
-export const MedicineManagement: React.FC = () => {
+export const MedicineManagement: React.FC<{ initialTab?: MedicineSubTab }> = ({ initialTab }) => {
   const {
     store,
     updateStore,
@@ -122,7 +115,12 @@ export const MedicineManagement: React.FC = () => {
   const canManageSettings = checkPermission('settings_manage');
   const canEditProducts = checkPermission('product_manage');
 
-  const [subTab, setSubTab] = useState<MedicineSubTab>('list');
+  const [subTab, setSubTab] = useState<MedicineSubTab>(initialTab || 'list');
+  useEffect(() => {
+    if (initialTab) {
+      setSubTab(initialTab);
+    }
+  }, [initialTab]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [expiryFilter, setExpiryFilter] = useState<'all' | 'expired' | '30' | '60' | '90'>('all');
@@ -303,16 +301,7 @@ export const MedicineManagement: React.FC = () => {
 
   const createEmptyMedVariantDraft = (index = 0, dosageForm = 'Tablet'): MedVariantDraft => {
     const ts = Date.now().toString().slice(-5);
-    const defaultBase =
-      dosageForm === 'Capsule'
-        ? 'Capsule'
-        : dosageForm === 'Syrup' || dosageForm === 'Drop'
-        ? 'Bottle'
-        : dosageForm === 'Injection'
-        ? 'Vial'
-        : dosageForm === 'Ointment'
-        ? 'Tube'
-        : 'Tablet';
+    const defaultBase = getDefaultBaseUnitForDosage(dosageForm);
     const isBlister = defaultBase === 'Tablet' || defaultBase === 'Capsule';
     const batchDef = `B${new Date().getFullYear().toString().slice(-2)}${(new Date().getMonth() + 1)
       .toString()
@@ -767,7 +756,7 @@ export const MedicineManagement: React.FC = () => {
       {/* Header + Module ON/OFF Toggle */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#5b46b5] text-white flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-r from-[#16a34a] to-[#10b981] text-white flex items-center justify-center shrink-0">
             <Pill className="w-6 h-6" />
           </div>
           <div>
@@ -794,7 +783,7 @@ export const MedicineManagement: React.FC = () => {
             <button
               type="button"
               onClick={openAddMedicine}
-              className="px-4 py-2 rounded-xl bg-[#ec1f73] hover:bg-[#d61665] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Add Medicine</span>
@@ -811,7 +800,7 @@ export const MedicineManagement: React.FC = () => {
       )}
 
       {/* Sub-navigation Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-print">
+      <div className="flex flex-wrap items-center gap-1.5 pb-1 no-print">
         {[
           { id: 'list', label: 'Medicine List', icon: Pill },
           { id: 'categories', label: 'Medicine Categories', icon: Tag },
@@ -829,13 +818,13 @@ export const MedicineManagement: React.FC = () => {
               key={t.id}
               type="button"
               onClick={() => setSubTab(t.id as MedicineSubTab)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold inline-flex items-center gap-1.5 leading-tight transition-colors cursor-pointer ${
                 active
-                  ? 'bg-[#5b46b5] text-white shadow-xs'
+                  ? 'bg-[#0f6ae6] text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{t.label}</span>
             </button>
           );
@@ -874,7 +863,85 @@ export const MedicineManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Medicine Cards */}
+          <div className="md:hidden space-y-2.5">
+            {filteredMedicines.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 text-xs">
+                No medicines found. Click &ldquo;Add Medicine&rdquo; to add one.
+              </div>
+            ) : (
+              filteredMedicines.map((p) => {
+                const v = p.variants[0];
+                const totalStock = p.variants.reduce((s, item) => s + item.stock_quantity, 0);
+                return (
+                  <div key={p.id} className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/40">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {p.image ? (
+                          <img src={p.image} alt={p.name} className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                            <Pill className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-xs truncate">
+                            {p.name}
+                            {p.variants.length > 1 && (
+                              <span className="ml-1 text-[10px] font-mono text-indigo-600">({p.variants.length}v)</span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-600 truncate">
+                            {p.generic_name || '—'} · {p.company_name || p.brand_name || '—'}
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-400 truncate">
+                            {p.medicine_type || 'Tablet'} · Rack: {p.rack_number || '—'} · {v?.barcode || p.code}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                        p.active !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      }`}>
+                        {p.active !== false ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Sale / MRP</span>
+                        <span className="font-mono font-bold text-slate-900">{store.currency_symbol}{v?.selling_price ?? 0}</span>
+                        <span className="text-[10px] text-slate-400 block">Buy {store.currency_symbol}{v?.purchase_price ?? 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Batch / Exp</span>
+                        <span className="font-mono text-slate-700 block truncate">{v?.batch_number || '—'}</span>
+                        <span className="font-mono text-[10px] text-slate-500">{v?.expiry_date || '—'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block">Stock</span>
+                        <span className={`font-mono font-bold ${totalStock <= (v?.min_stock_level || 10) ? 'text-rose-600' : 'text-emerald-700'}`}>
+                          {v ? formatStockBreakdown(totalStock, v) : totalStock}
+                        </span>
+                      </div>
+                    </div>
+                    {canEditProducts && (
+                      <div className="flex justify-end gap-1.5 pt-1 border-t border-slate-100">
+                        <button type="button" onClick={() => openEditMedicine(p)} className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer">
+                          <Edit2 className="w-3 h-3 text-indigo-600" />
+                          <span>Edit</span>
+                        </button>
+                        <button type="button" onClick={() => { archiveProduct(p.id); showNotice(`Archived ${p.name}`); }} className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-rose-600 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer">
+                          <Trash2 className="w-3 h-3" />
+                          <span>Archive</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px]">
@@ -1066,6 +1133,23 @@ export const MedicineManagement: React.FC = () => {
 
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
             <h3 className="text-sm font-bold text-slate-900 mb-3">Medicine Categories ({medicineCategories.length})</h3>
+            <div className="md:hidden space-y-2">
+              {medicineCategories.map((c) => (
+                <div key={c.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">{c.name} <span className="font-mono text-[10px] text-slate-500">{c.code || ''}</span></div>
+                    {c.description && <div className="text-[11px] text-slate-500 truncate">{c.description}</div>}
+                  </div>
+                  <div className="inline-flex gap-1 shrink-0">
+                    <button type="button" onClick={() => { setEditingCat(c); setCatName(c.name); setCatCode(c.code || ''); setCatDesc(c.description || ''); }} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
+                    {c.id !== 'cat_medicine' && (
+                      <button type="button" onClick={() => { deleteCategory(c.id); showNotice('Category deleted.'); }} className="p-1.5 rounded-lg bg-slate-100 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1113,6 +1197,7 @@ export const MedicineManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1170,6 +1255,21 @@ export const MedicineManagement: React.FC = () => {
 
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
             <h3 className="text-sm font-bold text-slate-900 mb-3">Generic Directory ({generics.length})</h3>
+            <div className="md:hidden space-y-2">
+              {generics.map((g) => (
+                <div key={g.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">{g.name}</div>
+                    {g.description && <div className="text-[11px] text-slate-500 truncate">{g.description}</div>}
+                  </div>
+                  <div className="inline-flex gap-1 shrink-0">
+                    <button type="button" onClick={() => { setEditingGen(g); setGenName(g.name); setGenDesc(g.description || ''); }} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => { deleteGeneric(g.id); showNotice('Generic deleted.'); }} className="p-1.5 rounded-lg bg-slate-100 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1212,6 +1312,7 @@ export const MedicineManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1291,6 +1392,22 @@ export const MedicineManagement: React.FC = () => {
 
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
             <h3 className="text-sm font-bold text-slate-900 mb-3">Pharmaceutical Companies ({pharmaCompanies.length})</h3>
+            <div className="md:hidden space-y-2">
+              {pharmaCompanies.map((c) => (
+                <div key={c.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">{c.name}</div>
+                    <div className="text-[11px] font-mono text-slate-600">{c.phone || '—'}</div>
+                    {c.address && <div className="text-[11px] text-slate-500 truncate">{c.address}</div>}
+                  </div>
+                  <div className="inline-flex gap-1 shrink-0">
+                    <button type="button" onClick={() => { setEditingComp(c); setCompName(c.name); setCompPhone(c.phone || ''); setCompEmail(c.email || ''); setCompAddress(c.address || ''); }} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => { deletePharmaCompany(c.id); showNotice('Company removed.'); }} className="p-1.5 rounded-lg bg-slate-100 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1340,6 +1457,7 @@ export const MedicineManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1350,7 +1468,32 @@ export const MedicineManagement: React.FC = () => {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-900">Batch Management ({flatMedicineVariants.length} variants)</h2>
           </div>
-          <div className="overflow-x-auto">
+          <div className="md:hidden space-y-2">
+            {flatMedicineVariants.map(({ product, variant }) => (
+              <div key={variant.id} className="border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">{product.name}</div>
+                    <div className="text-[11px] text-slate-500">{variant.variant_name}</div>
+                  </div>
+                  <span className="font-mono font-bold text-indigo-600 shrink-0">{variant.batch_number || 'NO-BATCH'}</span>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                  <div className="text-[11px] text-slate-600 font-mono">
+                    Exp: {variant.expiry_date || 'Not Set'} · Stock: <strong>{formatStockBreakdown(variant.stock_quantity, variant)}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBatchEditTarget({ product, variant, batch: variant.batch_number || '', expiry: variant.expiry_date || '' })}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 text-indigo-700 font-semibold text-[11px] cursor-pointer"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1427,7 +1570,41 @@ export const MedicineManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="md:hidden space-y-2">
+            {expiryRows.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">No matching medicines in this expiry window.</div>
+            ) : (
+              expiryRows.map(({ product, variant, daysLeft }) => {
+                const isExpired = daysLeft !== null && daysLeft <= 0;
+                const isCritical = daysLeft !== null && daysLeft > 0 && daysLeft <= 30;
+                return (
+                  <div key={variant.id} className="border border-slate-200 rounded-xl p-3 space-y-1.5 text-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-slate-800">{product.name} ({variant.variant_name})</div>
+                        <div className="text-[11px] text-slate-500">{product.company_name || '—'} · Batch: {variant.batch_number || '—'}</div>
+                      </div>
+                      {daysLeft === null ? (
+                        <span className="text-slate-400 text-[10px]">No Date</span>
+                      ) : isExpired ? (
+                        <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-bold text-[10px] shrink-0">EXPIRED</span>
+                      ) : isCritical ? (
+                        <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] shrink-0">{daysLeft}d left</span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px] shrink-0">{daysLeft}d left</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between text-[11px] font-mono text-slate-600 pt-1 border-t border-slate-100">
+                      <span>Exp: {variant.expiry_date || 'Not Set'}</span>
+                      <span className="font-bold text-slate-900">{variant.stock_quantity} {variant.unit}</span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1492,7 +1669,35 @@ export const MedicineManagement: React.FC = () => {
       {subTab === 'stock' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
           <h2 className="text-sm font-bold text-slate-900">Medicine Stock Levels</h2>
-          <div className="overflow-x-auto">
+          <div className="md:hidden space-y-2">
+            {flatMedicineVariants.map(({ product, variant }) => (
+              <div key={variant.id} className="border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-slate-800">{product.name} ({variant.variant_name})</div>
+                    <div className="text-[11px] text-slate-500">Rack: {product.rack_number || '—'} · Min: {variant.min_stock_level}</div>
+                  </div>
+                  <span className={`font-mono font-bold ${variant.stock_quantity <= variant.min_stock_level ? 'text-rose-600' : 'text-emerald-700'}`}>
+                    {formatStockBreakdown(variant.stock_quantity, variant)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                  <span className="text-[11px] font-mono text-slate-600">
+                    Value: {store.currency_symbol}{(variant.stock_quantity * variant.purchase_price).toLocaleString()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setStockEditTarget({ product, variant, newStock: String(variant.stock_quantity), reason: 'Medicine stock audit adjustment' })}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 text-indigo-700 font-semibold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>Adjust</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1638,10 +1843,10 @@ export const MedicineManagement: React.FC = () => {
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
             <div className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
-              {/* Green-accent Pharmacy Header matching specification */}
-              <div className="px-5 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between shrink-0">
+              {/* Mint-Emerald Pharmacy Header matching reference image */}
+              <div className="px-5 py-3.5 bg-gradient-to-r from-[#16a34a] via-[#10b981] to-[#34d399] text-white flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-full bg-white/20 border border-white/30 flex items-center justify-center">
                     <Pill className="w-5 h-5" />
                   </div>
                   <div>
@@ -1731,16 +1936,7 @@ export const MedicineManagement: React.FC = () => {
                               onChange={(e) => {
                                 const nextType = e.target.value;
                                 setMedType(nextType);
-                                const nextBase =
-                                  nextType === 'Capsule'
-                                    ? 'Capsule'
-                                    : nextType === 'Syrup' || nextType === 'Drop'
-                                    ? 'Bottle'
-                                    : nextType === 'Injection'
-                                    ? 'Vial'
-                                    : nextType === 'Ointment'
-                                    ? 'Tube'
-                                    : 'Tablet';
+                                const nextBase = getDefaultBaseUnitForDosage(nextType);
                                 setVariantDrafts((prev) =>
                                   prev.map((d) => ({
                                     ...d,
@@ -1749,12 +1945,19 @@ export const MedicineManagement: React.FC = () => {
                                   }))
                                 );
                               }}
-                              className="w-full border border-slate-300 rounded-xl px-3 py-2"
+                              className="w-full border border-slate-300 rounded-xl px-3 py-2 bg-white"
                             >
-                              {MEDICINE_TYPES.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
+                              {medType && !ALL_DOSAGE_FORMS.includes(medType) && (
+                                <option value={medType}>{medType}</option>
+                              )}
+                              {DOSAGE_FORM_GROUPS.map((group) => (
+                                <optgroup key={group.id} label={group.label}>
+                                  {group.forms.map((form) => (
+                                    <option key={`${group.id}_${form}`} value={form}>
+                                      {form}
+                                    </option>
+                                  ))}
+                                </optgroup>
                               ))}
                             </select>
                           </div>
@@ -1959,18 +2162,13 @@ export const MedicineManagement: React.FC = () => {
                                       onChange={(e) => updateVariantDraft(idx, { base_unit: e.target.value })}
                                       className="w-full min-w-[90px] border border-slate-300 rounded-lg px-2 py-1.5 bg-white"
                                     >
-                                      {['Tablet', 'Capsule', 'Bottle', 'Vial', 'Ampoule', 'Tube', 'Sachet', 'Piece', 'Drop'].map((u) => (
+                                      {MEDICINE_BASE_UNITS.map((u) => (
                                         <option key={u} value={u}>
                                           {u}
                                         </option>
                                       ))}
                                       {units
-                                        .filter(
-                                          (u) =>
-                                            !['Tablet', 'Capsule', 'Bottle', 'Vial', 'Ampoule', 'Tube', 'Sachet', 'Piece', 'Drop'].includes(
-                                              u.name
-                                            )
-                                        )
+                                        .filter((u) => !MEDICINE_BASE_UNITS.includes(u.name))
                                         .map((u) => (
                                           <option key={u.id} value={u.name}>
                                             {u.name}
@@ -2053,7 +2251,12 @@ export const MedicineManagement: React.FC = () => {
                             onChange={(e) => updateVariantDraft(activeVariantIdx, { base_unit: e.target.value })}
                             className="w-full border border-slate-300 rounded-xl px-3 py-2 bg-white font-semibold"
                           >
-                            {['Tablet', 'Capsule', 'Bottle', 'Vial', 'Ampoule', 'Tube', 'Sachet', 'Piece', 'Drop'].map((u) => (
+                            {Array.from(
+                              new Set([
+                                ...MEDICINE_BASE_UNITS,
+                                ...units.map((u) => u.name),
+                              ])
+                            ).map((u) => (
                               <option key={u} value={u}>
                                 {u}
                               </option>
@@ -2481,27 +2684,27 @@ export const MedicineManagement: React.FC = () => {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button
-                      type="button"
-                      onClick={() => setShowMedModal(false)}
-                      className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-600 cursor-pointer"
+                      type="submit"
+                      className="px-5 py-2 bg-[#16a34a] hover:bg-[#15803d] text-white rounded-xl font-bold cursor-pointer"
                     >
-                      Cancel
+                      {editingMed ? 'Update Medicine' : 'Save Medicine'}
                     </button>
                     {!editingMed && (
                       <button
                         type="button"
                         onClick={(e) => handleSaveMedicine(e, true)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold cursor-pointer inline-flex items-center gap-1"
+                        className="px-4 py-2 bg-[#0f6ae6] hover:bg-[#0c56bd] text-white rounded-xl font-bold cursor-pointer inline-flex items-center gap-1"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Save &amp; Add Another</span>
                       </button>
                     )}
                     <button
-                      type="submit"
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer"
+                      type="button"
+                      onClick={() => setShowMedModal(false)}
+                      className="px-4 py-2 bg-slate-500 hover:bg-slate-600 text-white rounded-xl font-semibold cursor-pointer"
                     >
-                      {editingMed ? 'Update Medicine' : 'Save Medicine'}
+                      Cancel
                     </button>
                   </div>
                 </div>

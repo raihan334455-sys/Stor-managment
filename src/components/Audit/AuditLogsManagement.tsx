@@ -157,8 +157,48 @@ export const AuditLogsManagement: React.FC = () => {
           </div>
         </div>
 
+        {/* Mobile Compact Cards */}
+        <div className="md:hidden space-y-2.5">
+          {filteredLogs.map((log) => (
+            <div
+              key={log.id}
+              className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-mono font-bold text-blue-600 text-[11px] truncate">
+                    {log.action}
+                  </div>
+                  <div className="text-xs font-semibold text-slate-800 mt-0.5">
+                    {log.user_name}
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
+                  {log.module}
+                </span>
+              </div>
+              <div className="text-xs text-slate-700">{log.description}</div>
+              {(log.old_value || log.new_value) && (
+                <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1 flex-wrap">
+                  <span>{log.old_value || 'None'}</span>
+                  <ArrowRight className="w-2.5 h-2.5" />
+                  <span className="text-blue-600 font-bold">{log.new_value}</span>
+                </div>
+              )}
+              <div className="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-200/80">
+                {new Date(log.created_at).toLocaleDateString()} · {new Date(log.created_at).toLocaleTimeString()}
+              </div>
+            </div>
+          ))}
+          {filteredLogs.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No audit records match the current filter.
+            </div>
+          )}
+        </div>
+
         {/* Audit Table */}
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">

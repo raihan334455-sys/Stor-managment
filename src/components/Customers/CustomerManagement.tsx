@@ -496,8 +496,75 @@ export const CustomerManagement: React.FC = () => {
                   <span>Customer Due Ledger Transactions</span>
                 </h4>
 
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="md:hidden divide-y divide-slate-100">
+                    {activeCustomerDues.map((dt) => {
+                      const isAccountCleared =
+                        dt.type === 'due_payment' &&
+                        (dt.balance_after <= 0.01 || (activeCustomer.total_due_amount || 0) <= 0.01);
+                      const linkedSale =
+                        dt.type === 'due_added' && dt.invoice_number
+                          ? sales.find((s) => s.invoice_number === dt.invoice_number)
+                          : undefined;
+                      return (
+                        <div key={dt.id} className="p-3 space-y-2 text-xs">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
+                                dt.type === 'due_added'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : isAccountCleared
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {dt.type === 'due_added' ? 'Credit Sale' : isAccountCleared ? 'Due Cleared' : 'Payment Received'}
+                              </span>
+                              <div className="font-mono text-[10px] text-slate-500 mt-1">{dt.date} {dt.time}</div>
+                              <div className="text-[11px] text-slate-700 mt-0.5">{dt.description}</div>
+                            </div>
+                            <div className="text-right font-mono shrink-0">
+                              <div className="font-bold text-emerald-700">Paid {store.currency_symbol}{dt.paid_amount}</div>
+                              <div className="text-[11px] font-bold text-slate-800">Bal {store.currency_symbol}{dt.balance_after}</div>
+                            </div>
+                          </div>
+                          {(dt.type === 'due_payment' || linkedSale) && (
+                            <div className="flex justify-end gap-1.5 pt-1 border-t border-slate-100">
+                              <button
+                                type="button"
+                                onClick={() => setShareReceipt(dt.type === 'due_payment' ? { type: 'due', data: dt } : { type: 'sale', data: linkedSale! })}
+                                className="px-2 py-1 rounded bg-rose-600 text-white text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Share2 className="w-3 h-3" /> Share
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => downloadReceiptAsPng(
+                                  dt.type === 'due_payment' ? { type: 'due', data: dt } : { type: 'sale', data: linkedSale! },
+                                  { store, customers, customerDues, suppliers, supplierDues, sales }
+                                )}
+                                className="px-2 py-1 rounded bg-indigo-600 text-white text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Download className="w-3 h-3" /> PNG
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPrintableReceipt(dt.type === 'due_payment' ? { type: 'due', data: dt } : { type: 'sale', data: linkedSale! })}
+                                className="px-2 py-1 rounded bg-white border border-slate-200 text-slate-700 text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Printer className="w-3 h-3 text-emerald-600" /> Receipt
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {activeCustomerDues.length === 0 && (
+                      <div className="p-6 text-center text-slate-400 text-xs">
+                        No due ledger records found for this customer
+                      </div>
+                    )}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 text-slate-500 text-[10px] bg-slate-50 font-semibold">
@@ -648,8 +715,28 @@ export const CustomerManagement: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="md:hidden divide-y divide-slate-100">
+                    {activeMobileStats && activeMobileStats.breakdown.length > 0 ? (
+                      activeMobileStats.breakdown.map((item) => (
+                        <div key={item.key} className="p-3 flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-800 truncate">{item.product_name}</div>
+                            <div className="text-[10px] text-slate-500">{item.variant_name} · {item.order_count}x orders</div>
+                          </div>
+                          <div className="text-right font-mono shrink-0">
+                            <div className="font-bold text-indigo-600">{item.total_qty} {item.unit}</div>
+                            <div className="text-[11px] font-bold text-slate-800">{store.currency_symbol}{item.total_spent.toLocaleString()}</div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-6 text-center text-slate-400 text-xs">
+                        এই মোবাইল নম্বরে এখনও কোনো পণ্য কেনার রেকর্ড নেই।
+                      </div>
+                    )}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 text-slate-500 text-[10px] bg-slate-50 font-semibold">

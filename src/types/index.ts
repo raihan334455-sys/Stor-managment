@@ -34,6 +34,8 @@ export interface User {
   device_id: string;
 }
 
+export type BusinessMode = 'general_shop' | 'pharmacy' | 'super_shop';
+
 export interface ModuleSettings {
   medicine_management: boolean;
   general_product_management: boolean;
@@ -88,11 +90,14 @@ export interface StoreSettings {
   due_alert_threshold?: number;
   due_alert_days?: number;
   due_payment_info?: string;
+  business_mode?: BusinessMode;
   module_medicine_enabled?: boolean;
   module_general_product_enabled?: boolean;
   auto_backup_enabled?: boolean;
   auto_backup_interval_hours?: number;
   last_auto_backup_at?: string;
+  last_drive_sync_at?: string;
+  last_firestore_sync_at?: string;
   enabled_payment_methods?: EnabledPaymentMethods;
   language: 'en' | 'bn';
   branch_id: string;
@@ -175,7 +180,8 @@ export type MedicineType =
   | 'Inhaler'
   | 'Powder'
   | 'Suppository'
-  | 'General';
+  | 'General'
+  | (string & {});
 
 export interface PackagingUnitConfig {
   id: string;
@@ -490,6 +496,44 @@ export interface HeldCart {
   held_by: string;
 }
 
+export type StockAdjustmentType =
+  | 'owner_personal_use'
+  | 'staff_personal_use'
+  | 'damaged_stock'
+  | 'expired_stock'
+  | 'wastage'
+  | 'free_sample'
+  | 'promotional_use'
+  | 'stock_correction'
+  | 'missing_lost';
+
+export interface StockAdjustmentRecord {
+  id: string;
+  reference_no: string;
+  product_id: string;
+  product_name: string;
+  variant_id: string;
+  variant_name: string;
+  is_medicine: boolean;
+  adjustment_type: StockAdjustmentType;
+  direction: 'deduct' | 'add';
+  available_stock_before: number;
+  quantity: number;
+  unit: string;
+  purchase_price: number;
+  selling_price: number;
+  total_purchase_value: number;
+  date: string;
+  time: string;
+  reason: string;
+  note?: string;
+  taken_by: string;
+  recorded_by: string;
+  user_id: string;
+  created_at: string;
+  branch_id: string;
+}
+
 export interface StockTransaction {
   id: string;
   product_id: string;
@@ -503,6 +547,8 @@ export interface StockTransaction {
     | 'supplier_return'
     | 'damage'
     | 'wastage'
+    | 'expired'
+    | 'personal_use'
     | 'adjustment'
     | 'stock_in'
     | 'stock_out'
@@ -634,6 +680,9 @@ export interface CashSession {
   id: string;
   cashier_id: string;
   cashier_name: string;
+  employee_id?: string;
+  employee_code?: string;
+  shift_label?: string;
   start_time: string;
   end_time?: string;
   opening_cash: number;
@@ -751,6 +800,8 @@ export interface FinancialAccountTx {
   created_at: string;
 }
 
+export type EmployeeShiftType = 'morning' | 'evening' | 'night' | 'full_day' | 'custom';
+
 export interface Employee {
   id: string;
   employee_code: string;
@@ -764,6 +815,10 @@ export interface Employee {
   joining_date: string;
   basic_salary: number;
   linked_user_id?: string;
+  shift?: EmployeeShiftType;
+  shift_label?: string;
+  shift_start?: string;
+  shift_end?: string;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -774,7 +829,9 @@ export type AttendanceStatus = 'present' | 'absent' | 'late' | 'half_day' | 'lea
 export interface AttendanceRecord {
   id: string;
   employee_id: string;
+  employee_code?: string;
   employee_name: string;
+  shift?: string;
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
   check_in?: string;
@@ -821,6 +878,7 @@ export interface DatabaseBackup {
   purchase_returns?: PurchaseReturn[];
   sales: Sale[];
   stock_transactions: StockTransaction[];
+  stock_adjustments?: StockAdjustmentRecord[];
   stock_transfers?: StockTransfer[];
   returns: SaleReturn[];
   expenses: Expense[];

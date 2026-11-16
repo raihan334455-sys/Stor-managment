@@ -32,7 +32,7 @@ const FLOAT_PRESETS = [
 ];
 
 export const CashDrawerManagement: React.FC = () => {
-  const { cashSessions, sales, customerDues, expenses, store, activeUser, addAuditLog, refreshData } = useApp();
+  const { cashSessions, sales, customerDues, expenses, store, activeUser, employees, addAuditLog, refreshData } = useApp();
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -42,8 +42,9 @@ export const CashDrawerManagement: React.FC = () => {
   const [actualCashInput, setActualCashInput] = useState('');
   const [closingNotes, setClosingNotes] = useState('');
 
-  // Active open session
+  // Active open session & linked employee profile
   const activeSession = cashSessions.find((s) => s.status === 'open');
+  const activeEmployee = employees.find((e) => e.linked_user_id === activeUser.id && e.active);
 
   // Compute live amounts during this active session
   const sessionStartTime = activeSession ? new Date(activeSession.start_time).getTime() : 0;
@@ -103,6 +104,11 @@ export const CashDrawerManagement: React.FC = () => {
       id: `cs_${Date.now()}`,
       cashier_id: activeUser.id,
       cashier_name: activeUser.name,
+      employee_id: activeEmployee?.id,
+      employee_code: activeEmployee?.employee_code,
+      shift_label: activeEmployee?.shift_label
+        ? `${activeEmployee.shift_label}${activeEmployee.shift_start && activeEmployee.shift_end ? ` (${activeEmployee.shift_start}–${activeEmployee.shift_end})` : ''}`
+        : undefined,
       start_time: new Date().toISOString(),
       opening_cash: openingAmount,
       total_cash_sales: 0,
@@ -234,9 +240,21 @@ export const CashDrawerManagement: React.FC = () => {
                     LIVE
                   </span>
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Opened by <span className="font-semibold text-slate-700">{activeSession.cashier_name}</span> at{' '}
-                  <span className="font-mono">{new Date(activeSession.start_time).toLocaleTimeString()}</span>
+                <p className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
+                  <span>
+                    Opened by <span className="font-semibold text-slate-700">{activeSession.cashier_name}</span> at{' '}
+                    <span className="font-mono">{new Date(activeSession.start_time).toLocaleTimeString()}</span>
+                  </span>
+                  {activeSession.employee_code && (
+                    <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 font-mono font-bold text-[10px]">
+                      ID: {activeSession.employee_code}
+                    </span>
+                  )}
+                  {activeSession.shift_label && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
+                      {activeSession.shift_label}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -345,7 +363,77 @@ export const CashDrawerManagement: React.FC = () => {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Compact Cards */}
+        <div className="md:hidden space-y-2.5">
+          {cashSessions.map((sess) => (
+            <div
+              key={sess.id}
+              className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-mono font-bold text-xs text-blue-600 truncate">{sess.id}</div>
+                  <div className="font-bold text-sm text-slate-900">{sess.cashier_name}</div>
+                </div>
+                {sess.status === 'open' ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                    Active
+                  </span>
+                ) : (
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${
+                      (sess.discrepancy || 0) === 0
+                        ? 'bg-slate-100 text-slate-700'
+                        : (sess.discrepancy || 0) > 0
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-rose-100 text-rose-800'
+                    }`}
+                  >
+                    {(sess.discrepancy || 0) === 0
+                      ? 'Balanced'
+                      : (sess.discrepancy || 0) > 0
+                      ? `+৳${sess.discrepancy}`
+                      : `-৳${Math.abs(sess.discrepancy || 0)}`}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] bg-white p-2.5 rounded-lg border border-slate-200 font-mono tabular-nums">
+                <div>
+                  <span className="text-slate-400 font-sans block text-[10px]">Open Float</span>
+                  <span className="font-bold text-slate-800">
+                    {store.currency_symbol}{sess.opening_cash.toLocaleString()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-sans block text-[10px]">Cash Sales</span>
+                  <span className="font-bold text-emerald-700">
+                    {store.currency_symbol}{sess.total_cash_sales.toLocaleString()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-sans block text-[10px]">Expected</span>
+                  <span className="font-bold text-slate-900">
+                    {store.currency_symbol}{sess.expected_closing_cash.toLocaleString()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-sans block text-[10px]">Actual Count</span>
+                  <span className="font-bold text-slate-900">
+                    {sess.actual_closing_cash !== undefined
+                      ? `${store.currency_symbol}${sess.actual_closing_cash.toLocaleString()}`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-500 font-mono">
+                Start: {new Date(sess.start_time).toLocaleString()}
+                {sess.end_time && ` · End: ${new Date(sess.end_time).toLocaleString()}`}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">
@@ -371,23 +459,23 @@ export const CashDrawerManagement: React.FC = () => {
                       <div>End: {new Date(sess.end_time).toLocaleString()}</div>
                     )}
                   </td>
-                  <td className="p-3 text-right font-mono">
+                  <td className="p-3 text-right font-mono tabular-nums">
                     {store.currency_symbol}
                     {sess.opening_cash.toLocaleString()}
                   </td>
-                  <td className="p-3 text-right font-mono text-emerald-600 font-semibold">
+                  <td className="p-3 text-right font-mono text-emerald-600 font-semibold tabular-nums">
                     {store.currency_symbol}
                     {sess.total_cash_sales.toLocaleString()}
                   </td>
-                  <td className="p-3 text-right font-mono text-rose-600 font-semibold">
+                  <td className="p-3 text-right font-mono text-rose-600 font-semibold tabular-nums">
                     {store.currency_symbol}
                     {sess.total_cash_expenses.toLocaleString()}
                   </td>
-                  <td className="p-3 text-right font-mono font-bold text-slate-800">
+                  <td className="p-3 text-right font-mono font-bold text-slate-800 tabular-nums">
                     {store.currency_symbol}
                     {sess.expected_closing_cash.toLocaleString()}
                   </td>
-                  <td className="p-3 text-right font-mono font-bold text-slate-900">
+                  <td className="p-3 text-right font-mono font-bold text-slate-900 tabular-nums">
                     {sess.actual_closing_cash !== undefined
                       ? `${store.currency_symbol}${sess.actual_closing_cash.toLocaleString()}`
                       : '-'}

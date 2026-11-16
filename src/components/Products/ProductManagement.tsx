@@ -51,6 +51,11 @@ import {
   getVariantBaseUnit,
   getVariantPackagingOptions,
 } from '../../utils/packaging';
+import {
+  ALL_DOSAGE_FORMS,
+  DOSAGE_FORM_GROUPS,
+  getDefaultBaseUnitForDosage,
+} from '../../utils/dosageForms';
 
 interface UnifiedVariantDraft {
   id?: string;
@@ -158,19 +163,6 @@ const GROCERY_PRESETS: PresetPhoto[] = [
   { name: 'Red Onions & Garlic (পেঁয়াজ/রসুন)', category: 'Produce', url: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=400&auto=format&fit=crop&q=80' },
 ];
 
-const MEDICINE_TYPES: MedicineType[] = [
-  'Tablet',
-  'Capsule',
-  'Syrup',
-  'Injection',
-  'Drop',
-  'Ointment',
-  'Inhaler',
-  'Powder',
-  'Suppository',
-  'General',
-];
-
 const UNIT_OPTIONS: UnitType[] = [
   'Strip',
   'Piece',
@@ -181,6 +173,11 @@ const UNIT_OPTIONS: UnitType[] = [
   'Ampoule',
   'Tube',
   'Sachet',
+  'Drop',
+  'Syringe',
+  'Patch',
+  'Inhaler',
+  'Spray',
   'Box',
   'Pack',
   'Carton',
@@ -1160,9 +1157,9 @@ export const ProductManagement: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
             {medEnabled ? (
-              <Pill className="w-6 h-6 text-[#ec1f73]" />
+              <Pill className="w-6 h-6 text-[#16a34a]" />
             ) : (
-              <Package className="w-6 h-6 text-[#5b46b5]" />
+              <Package className="w-6 h-6 text-[#0f6ae6]" />
             )}
             <span>
               {medEnabled && genEnabled
@@ -1184,7 +1181,13 @@ export const ProductManagement: React.FC = () => {
             <button
               type="button"
               onClick={() => openAddModal(medEnabled ? 'medicine' : 'product', 'single')}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#ec1f73] to-[#5b46b5] hover:opacity-95 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              className={`px-4 py-2.5 rounded-xl text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer min-h-[44px] ${
+                medEnabled && genEnabled
+                  ? 'bg-gradient-to-r from-[#16a34a] to-[#0f6ae6] hover:opacity-95'
+                  : medEnabled
+                  ? 'bg-gradient-to-r from-[#16a34a] to-[#10b981] hover:opacity-95'
+                  : 'bg-gradient-to-r from-[#0b6ff2] to-[#1b8cff] hover:opacity-95'
+              }`}
             >
               {medEnabled ? <Pill className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               <span>
@@ -1228,13 +1231,13 @@ export const ProductManagement: React.FC = () => {
                 ? 'Search by Medicine/Product Name, Generic, Brand, Company, Strength, Batch, Rack or Barcode...'
                 : 'Search by Product Name, Brand, Code, Rack or Barcode...'
             }
-            className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-24 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm"
+            className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-24 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm min-h-[44px]"
           />
           <button
             type="button"
             onClick={() => setScannerTarget({ type: 'search' })}
             title="Scan QR or Barcode to search product"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[11px] font-bold text-white bg-[#5b46b5] hover:bg-[#4a379c] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[11px] font-bold text-white bg-[#0f6ae6] hover:bg-[#0c56bd] px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
           >
             <QrCode className="w-3.5 h-3.5" />
             <span>SCAN</span>
@@ -1316,8 +1319,8 @@ export const ProductManagement: React.FC = () => {
                       <div
                         className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm border shrink-0 ${
                           p.is_medicine
-                            ? 'bg-pink-50 text-[#ec1f73] border-pink-100'
-                            : 'bg-blue-50 text-blue-600 border-blue-100'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-blue-50 text-[#0f6ae6] border-blue-200'
                         }`}
                       >
                         {p.is_medicine ? <Pill className="w-5 h-5" /> : p.name.charAt(0)}
@@ -1328,12 +1331,12 @@ export const ProductManagement: React.FC = () => {
                       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <h3 className="font-bold text-sm text-slate-800">{p.name}</h3>
                         {medEnabled && p.strength && (
-                          <span className="text-[11px] font-bold font-mono text-[#5b46b5]">
+                          <span className="text-[11px] font-bold font-mono text-blue-700">
                             {p.strength}
                           </span>
                         )}
                         {medEnabled && p.medicine_type && p.medicine_type !== 'General' && (
-                          <span className="text-[11px] font-semibold text-[#ec1f73]">
+                          <span className="text-[11px] font-semibold text-emerald-700">
                             · {p.medicine_type}
                           </span>
                         )}
@@ -1362,7 +1365,7 @@ export const ProductManagement: React.FC = () => {
                           </span>
                         )}
                         {p.rack_number && (
-                          <span className="font-mono text-[#5b46b5]">
+                          <span className="font-mono text-[#0f44a6]">
                             · Rack: {p.rack_number}
                           </span>
                         )}
@@ -1426,7 +1429,66 @@ export const ProductManagement: React.FC = () => {
                       <span>{medEnabled ? 'Variants, Batch, MRP & Stock Entries' : 'Variants, MRP & Stock Entries'}</span>
                     </h4>
 
-                    <div className="overflow-x-auto">
+                    {/* Mobile Variant Cards */}
+                    <div className="md:hidden space-y-2">
+                      {p.variants.map((v) => (
+                        <div key={v.id} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="font-bold text-slate-900">
+                                {v.variant_name}
+                                {medEnabled && v.strength ? ` (${v.strength})` : ''}
+                              </div>
+                              <div className="text-[11px] font-mono text-slate-500 mt-0.5">{v.barcode}</div>
+                              {medEnabled && (v.batch_number || v.expiry_date) && (
+                                <div className="text-[11px] font-mono text-slate-600 mt-0.5">
+                                  Batch: {v.batch_number || '—'}{v.expiry_date ? ` · Exp: ${v.expiry_date}` : ''}
+                                </div>
+                              )}
+                            </div>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${v.active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                              {v.active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                            <div>
+                              <span className="text-slate-400 block text-[10px]">Purchase</span>
+                              <span className="font-mono font-semibold text-slate-700">{store.currency_symbol}{v.purchase_price}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[10px]">Sale / MRP</span>
+                              <span className="font-mono font-bold text-slate-900">{store.currency_symbol}{v.selling_price}/{v.unit}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-slate-400 block text-[10px]">Stock</span>
+                              <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold inline-block ${
+                                v.stock_quantity <= v.min_stock_level
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {formatStockBreakdown(v.stock_quantity, v)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex justify-end pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedVariantForBarcode(v);
+                                setShowBarcodePrintModal(true);
+                              }}
+                              className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Barcode className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Print Label</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Tablet/Desktop Variant Table */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className="border-b border-slate-200 text-slate-500 text-[11px] font-semibold">
@@ -1490,9 +1552,9 @@ export const ProductManagement: React.FC = () => {
                                     setSelectedVariantForBarcode(v);
                                     setShowBarcodePrintModal(true);
                                   }}
-                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded text-[11px] font-semibold inline-flex items-center gap-1 shadow-sm cursor-pointer"
+                                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
                                 >
-                                  <Barcode className="w-3 h-3 text-blue-600" />
+                                  <Barcode className="w-3 h-3 text-indigo-600" />
                                   <span>Print Label</span>
                                 </button>
                               </td>
@@ -1519,23 +1581,34 @@ export const ProductManagement: React.FC = () => {
       {showProductModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div
-            className={`bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 w-full text-slate-800 shadow-2xl max-h-[94vh] flex flex-col transition-all ${
-              entryMode === 'bulk' && !editingProduct ? 'max-w-7xl' : 'max-w-3xl'
+            className={`bg-white border border-slate-200 rounded-2xl w-full text-slate-800 shadow-2xl max-h-[94vh] flex flex-col overflow-hidden transition-all ${
+              entryMode === 'bulk' && !editingProduct ? 'max-w-7xl' : 'max-w-4xl'
             }`}
           >
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100 shrink-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3 className="text-base font-bold flex items-center gap-2 text-slate-800">
+            {/* Reference Style Gradient Header Banner (Mint-Emerald for Medicine, Royal Blue for Product, Navy for Bulk) */}
+            <div
+              className={`px-4 sm:px-6 py-3.5 text-white flex flex-wrap items-center justify-between gap-2 shrink-0 ${
+                entryMode === 'bulk' && !editingProduct
+                  ? 'bg-gradient-to-r from-[#091f46] via-[#0d3577] to-[#0b56b8]'
+                  : isMedicineMode && medEnabled
+                  ? 'bg-gradient-to-r from-[#16a34a] via-[#10b981] to-[#34d399]'
+                  : 'bg-gradient-to-r from-[#0b6ff2] via-[#1b8cff] to-[#34a4ff]'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-white/20 border border-white/30 flex items-center justify-center shrink-0">
                   {entryMode === 'bulk' && !editingProduct ? (
-                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                    <FileSpreadsheet className="w-5 h-5 text-white" />
                   ) : isSimilarMode ? (
-                    <CopyPlus className="w-5 h-5 text-blue-600" />
-                  ) : isMedicineMode ? (
-                    <Pill className="w-5 h-5 text-[#ec1f73]" />
+                    <CopyPlus className="w-5 h-5 text-white" />
+                  ) : isMedicineMode && medEnabled ? (
+                    <Pill className="w-5 h-5 text-white" />
                   ) : (
-                    <Package className="w-5 h-5 text-[#5b46b5]" />
+                    <Package className="w-5 h-5 text-white" />
                   )}
-                  <span>
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-extrabold leading-tight truncate">
                     {editingProduct
                       ? medEnabled
                         ? 'Edit Product & Medicine'
@@ -1547,23 +1620,58 @@ export const ProductManagement: React.FC = () => {
                         ? 'Add Similar Product / Medicine'
                         : 'Add Similar Product'
                       : isMedicineMode && medEnabled
-                      ? 'নতুন ওষুধ যোগ করা (Add New Medicine)'
-                      : medEnabled
-                      ? 'Add New Product & Medicine'
-                      : 'Add New Product'}
-                  </span>
-                </h3>
+                      ? 'Add Medicine (নতুন ওষুধ যোগ করুন)'
+                      : 'Add Product (নতুন পণ্য যোগ করুন)'}
+                  </h3>
+                  <p className="text-[11px] text-white/90 truncate">
+                    {entryMode === 'bulk'
+                      ? 'CSV / Excel পেস্ট বা সারি যোগ করে একসাথে সেভ করুন'
+                      : isMedicineMode && medEnabled
+                      ? 'Add medicine with variants, 8 dosage forms, packaging conversion & batch stock'
+                      : 'Add general product with variants, packaging conversion & base-unit stock'}
+                  </p>
+                </div>
+              </div>
 
-                {/* Single Entry vs Bulk Add Switcher inside unified modal */}
-                {!editingProduct && !isSimilarMode && (
-                  <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl text-[11px] font-bold border border-slate-200">
+              <div className="flex items-center gap-2.5 shrink-0">
+                {entryMode === 'single' && (
+                  <button
+                    type="button"
+                    onClick={() => setProdActive(!prodActive)}
+                    className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 border border-white/30 text-white text-xs font-extrabold cursor-pointer"
+                    title="Toggle Active / Inactive"
+                  >
+                    <span>{prodActive ? 'ON' : 'OFF'}</span>
+                    <span
+                      className={`w-4 h-4 rounded-full inline-block transition-colors ${
+                        prodActive ? 'bg-white' : 'bg-slate-300'
+                      }`}
+                    />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowProductModal(false)}
+                  className="p-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white cursor-pointer"
+                  aria-label="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-bar: Entry Mode (Single / Bulk) & Type Switcher (Medicine / Product) */}
+            {(!editingProduct || (medEnabled && genEnabled)) && (
+              <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                {!editingProduct && !isSimilarMode ? (
+                  <div className="inline-flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => setEntryMode('single')}
-                      className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
                         entryMode === 'single'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-[#0f6ae6] text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
                       Single Add (একক)
@@ -1571,23 +1679,22 @@ export const ProductManagement: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setEntryMode('bulk')}
-                      className={`px-3 py-1 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
                         entryMode === 'bulk'
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-[#0d3577] text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5" />
                       <span>Bulk Add (একসাথে অনেকগুলো)</span>
                     </button>
                   </div>
+                ) : (
+                  <div />
                 )}
-              </div>
 
-              <div className="flex items-center gap-2">
-                {/* Mode Toggle: Medicine vs General Product (in Single mode) */}
                 {entryMode === 'single' && medEnabled && genEnabled && (
-                  <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl text-[11px] font-bold">
+                  <div className="inline-flex items-center p-1 bg-white border border-slate-200 rounded-xl text-[11px] font-bold">
                     <button
                       type="button"
                       onClick={() => {
@@ -1598,13 +1705,14 @@ export const ProductManagement: React.FC = () => {
                           setVariantsForm([buildDefaultDraft(true, 0)]);
                         }
                       }}
-                      className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      className={`px-3 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
                         isMedicineMode
-                          ? 'bg-[#ec1f73] text-white shadow-xs'
+                          ? 'bg-[#16a34a] text-white shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      Medicine (ওষুধ)
+                      <Pill className="w-3 h-3" />
+                      <span>Medicine (ওষুধ)</span>
                     </button>
                     <button
                       type="button"
@@ -1619,27 +1727,21 @@ export const ProductManagement: React.FC = () => {
                           setVariantsForm([buildDefaultDraft(false, 0)]);
                         }
                       }}
-                      className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      className={`px-3 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
                         !isMedicineMode
-                          ? 'bg-[#5b46b5] text-white shadow-xs'
+                          ? 'bg-[#0f6ae6] text-white shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      General Product (পণ্য)
+                      <Package className="w-3 h-3" />
+                      <span>General Product (পণ্য)</span>
                     </button>
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={() => setShowProductModal(false)}
-                  className="text-slate-400 hover:text-slate-700 text-sm font-bold p-1 cursor-pointer"
-                >
-                  ✕
-                </button>
               </div>
-            </div>
+            )}
 
+            <div className="px-4 sm:px-6 pb-5 pt-1 flex-1 flex flex-col overflow-hidden">
             {entryMode === 'bulk' && !editingProduct ? (
               <div className="flex flex-col flex-1 overflow-hidden mt-3 space-y-3">
                 {/* Bulk Toolbar */}
@@ -1651,7 +1753,7 @@ export const ProductManagement: React.FC = () => {
                         onClick={() =>
                           setBulkRows((prev) => [...prev, createBulkRow(true, prev.length)])
                         }
-                        className="px-3 py-1.5 rounded-lg bg-[#ec1f73] hover:bg-[#d61665] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-[#16a34a] hover:bg-[#15803d] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
                       >
                         <Pill className="w-3.5 h-3.5" />
                         <span>+ Add Medicine Row</span>
@@ -1663,7 +1765,7 @@ export const ProductManagement: React.FC = () => {
                         onClick={() =>
                           setBulkRows((prev) => [...prev, createBulkRow(false, prev.length)])
                         }
-                        className="px-3 py-1.5 rounded-lg bg-[#5b46b5] hover:bg-[#4a379c] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-[#0f6ae6] hover:bg-[#0c56bd] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
                       >
                         <Package className="w-3.5 h-3.5" />
                         <span>+ Add Product Row</span>
@@ -1813,8 +1915,8 @@ export const ProductManagement: React.FC = () => {
                                 }}
                                 className={`w-full rounded-lg px-2 py-1.5 text-[11px] font-bold border ${
                                   row.is_medicine
-                                    ? 'bg-pink-50 border-pink-300 text-[#ec1f73]'
-                                    : 'bg-indigo-50 border-indigo-300 text-[#5b46b5]'
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                    : 'bg-blue-50 border-blue-300 text-[#0f6ae6]'
                                 }`}
                               >
                                 <option value="medicine">Medicine (ওষুধ)</option>
@@ -1824,8 +1926,8 @@ export const ProductManagement: React.FC = () => {
                               <span
                                 className={`inline-block px-2 py-1 rounded-lg text-[11px] font-bold ${
                                   row.is_medicine
-                                    ? 'bg-pink-50 text-[#ec1f73]'
-                                    : 'bg-indigo-50 text-[#5b46b5]'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : 'bg-blue-50 text-[#0f6ae6]'
                                 }`}
                               >
                                 {row.is_medicine ? 'Medicine' : 'Product'}
@@ -1924,21 +2026,32 @@ export const ProductManagement: React.FC = () => {
                               <>
                                 <select
                                   value={row.medicine_type}
-                                  onChange={(e) =>
+                                  onChange={(e) => {
+                                    const nextForm = e.target.value as MedicineType;
+                                    const nextBase = getDefaultBaseUnitForDosage(nextForm) as UnitType;
                                     setBulkRows((prev) =>
                                       prev.map((r) =>
                                         r.rowId === row.rowId
-                                          ? { ...r, medicine_type: e.target.value as MedicineType }
+                                          ? { ...r, medicine_type: nextForm, base_unit: nextBase }
                                           : r
                                       )
-                                    )
-                                  }
+                                    );
+                                  }}
                                   className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px]"
                                 >
-                                  {MEDICINE_TYPES.filter((t) => t !== 'General').map((t) => (
-                                    <option key={t} value={t}>
-                                      {t}
-                                    </option>
+                                  {row.medicine_type &&
+                                    row.medicine_type !== 'General' &&
+                                    !ALL_DOSAGE_FORMS.includes(row.medicine_type) && (
+                                      <option value={row.medicine_type}>{row.medicine_type}</option>
+                                    )}
+                                  {DOSAGE_FORM_GROUPS.map((group) => (
+                                    <optgroup key={group.id} label={group.label}>
+                                      {group.forms.map((form) => (
+                                        <option key={`${group.id}_${form}`} value={form}>
+                                          {form}
+                                        </option>
+                                      ))}
+                                    </optgroup>
                                   ))}
                                 </select>
                                 <input
@@ -2388,13 +2501,31 @@ export const ProductManagement: React.FC = () => {
                     </label>
                     <select
                       value={prodMedicineType}
-                      onChange={(e) => setProdMedicineType(e.target.value)}
+                      onChange={(e) => {
+                        const nextForm = e.target.value;
+                        setProdMedicineType(nextForm);
+                        if (!editingProduct) {
+                          const nextBase = getDefaultBaseUnitForDosage(nextForm) as UnitType;
+                          setVariantsForm((prev) =>
+                            prev.map((vf) => ({ ...vf, base_unit: nextBase }))
+                          );
+                        }
+                      }}
                       className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                     >
-                      {MEDICINE_TYPES.map((mt) => (
-                        <option key={mt} value={mt}>
-                          {mt}
-                        </option>
+                      {prodMedicineType &&
+                        prodMedicineType !== 'General' &&
+                        !ALL_DOSAGE_FORMS.includes(prodMedicineType) && (
+                          <option value={prodMedicineType}>{prodMedicineType}</option>
+                        )}
+                      {DOSAGE_FORM_GROUPS.map((group) => (
+                        <optgroup key={group.id} label={group.label}>
+                          {group.forms.map((form) => (
+                            <option key={`${group.id}_${form}`} value={form}>
+                              {form}
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                   </div>
@@ -2560,17 +2691,17 @@ export const ProductManagement: React.FC = () => {
               {/* Variants, Barcode, Batch, Pricing (Purchase, MRP, Discount, Sale Price) & Stock */}
               <div className="pt-2">
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-bold text-[#5b46b5] uppercase tracking-wider flex items-center gap-1">
-                    <Layers className="w-3.5 h-3.5" />
+                  <h4 className="text-xs font-extrabold text-blue-800 uppercase tracking-wider flex items-center gap-1">
+                    <Layers className="w-3.5 h-3.5 text-[#0f6ae6]" />
                     <span>Pack / Batch / Pricing & Stock ({variantsForm.length})</span>
                   </h4>
                   <button
                     type="button"
                     onClick={handleAddVariantRow}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                    className="text-xs text-white font-bold flex items-center gap-1 bg-[#16a34a] hover:bg-[#15803d] px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Variant</span>
+                    <span>Add Another Variant</span>
                   </button>
                 </div>
 
@@ -2701,7 +2832,7 @@ export const ProductManagement: React.FC = () => {
                               type="button"
                               onClick={() => setScannerTarget({ type: 'variant', index: idx })}
                               title="Scan product Barcode / QR"
-                              className="p-1.5 rounded-lg bg-[#5b46b5] hover:bg-[#4a379c] text-white shrink-0 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg bg-[#0f6ae6] hover:bg-[#0c56bd] text-white shrink-0 transition-colors cursor-pointer"
                             >
                               <QrCode className="w-3.5 h-3.5" />
                             </button>
@@ -2837,7 +2968,7 @@ export const ProductManagement: React.FC = () => {
                                         updated[idx] = { ...updated[idx], outer_selling_price: parseFloat(e.target.value) || 0 };
                                         setVariantsForm(updated);
                                       }}
-                                      className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 font-mono font-bold text-[#ec1f73]"
+                                      className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 font-mono font-bold text-[#0f44a6]"
                                     />
                                   </td>
                                   <td className="py-1.5 pr-2">
@@ -2929,7 +3060,7 @@ export const ProductManagement: React.FC = () => {
                                         updated[idx] = { ...updated[idx], mid_selling_price: parseFloat(e.target.value) || 0 };
                                         setVariantsForm(updated);
                                       }}
-                                      className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 font-mono font-bold text-[#ec1f73]"
+                                      className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 font-mono font-bold text-[#0f44a6]"
                                     />
                                   </td>
                                   <td className="py-1.5 pr-2">
@@ -3010,7 +3141,7 @@ export const ProductManagement: React.FC = () => {
                                       };
                                       setVariantsForm(updated);
                                     }}
-                                    className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 font-mono font-bold text-[#ec1f73]"
+                                    className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 font-mono font-bold text-[#0f44a6]"
                                   />
                                 </td>
                                 <td className="py-1.5 pr-2">
@@ -3173,11 +3304,7 @@ export const ProductManagement: React.FC = () => {
               <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-200">
                 <button
                   type="submit"
-                  className={`flex-1 py-2.5 px-4 rounded-xl text-white text-xs font-bold shadow transition-colors cursor-pointer ${
-                    isMedicineMode
-                      ? 'bg-[#ec1f73] hover:bg-[#d61665]'
-                      : 'bg-[#5b46b5] hover:bg-[#4a379c]'
-                  }`}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white text-xs font-bold shadow transition-colors cursor-pointer"
                 >
                   {isMedicineMode ? 'Save Medicine' : 'Save Product'}
                 </button>
@@ -3185,7 +3312,7 @@ export const ProductManagement: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => saveUnifiedProduct(true)}
-                    className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow transition-colors cursor-pointer"
+                    className="py-2.5 px-4 rounded-xl bg-[#0f6ae6] hover:bg-[#0c56bd] text-white text-xs font-bold shadow transition-colors cursor-pointer"
                   >
                     + Save & Add Another
                   </button>
@@ -3193,7 +3320,7 @@ export const ProductManagement: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowProductModal(false)}
-                  className="py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="py-2.5 px-4 rounded-xl bg-slate-500 hover:bg-slate-600 text-white text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -3201,6 +3328,7 @@ export const ProductManagement: React.FC = () => {
             </form>
               </>
             )}
+            </div>
           </div>
         </div>
       )}

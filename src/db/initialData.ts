@@ -62,6 +62,7 @@ export const INITIAL_STORE: StoreSettings = {
   due_payment_info: '',
   module_medicine_enabled: true,
   module_general_product_enabled: true,
+  business_mode: 'super_shop',
   enabled_payment_methods: {
     cash: true,
     bkash: true,

@@ -16,6 +16,7 @@ import {
   Send,
   Building,
   ShieldAlert,
+  AlertCircle,
 } from 'lucide-react';
 import { Quotation, QuotationItem } from '../../types';
 import { isProductEnabled } from '../../utils/modules';
@@ -51,6 +52,7 @@ export const QuotationsManagement: React.FC = () => {
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedQuotationForPrint, setSelectedQuotationForPrint] = useState<Quotation | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Form State
   const [custName, setCustName] = useState('');
@@ -142,12 +144,13 @@ export const QuotationsManagement: React.FC = () => {
 
   const handleSaveQuotation = (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
     if (!custName.trim()) {
-      alert('Please enter customer name');
+      setModalError('Please enter customer name');
       return;
     }
     if (items.length === 0) {
-      alert('Please add at least one product item to quotation');
+      setModalError('Please add at least one product item to quotation');
       return;
     }
 
@@ -262,6 +265,7 @@ export const QuotationsManagement: React.FC = () => {
         </div>
         <button
           onClick={() => {
+            setModalError(null);
             setShowAddModal(true);
             setItems([]);
             setCustName('');
@@ -334,7 +338,76 @@ export const QuotationsManagement: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Compact Cards */}
+        <div className="md:hidden space-y-2.5">
+          {filteredQuotes.map((q) => (
+            <div
+              key={q.id}
+              className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-xs text-blue-600">
+                      {q.quotation_number}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        q.status === 'converted'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-blue-100 text-blue-800 border border-blue-200'
+                      }`}
+                    >
+                      {q.status}
+                    </span>
+                  </div>
+                  <div className="font-bold text-sm text-slate-900 mt-0.5 truncate">
+                    {q.customer_name}
+                  </div>
+                  {q.customer_mobile && (
+                    <div className="text-[11px] text-slate-500 font-mono">{q.customer_mobile}</div>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-mono font-bold text-sm text-slate-900 tabular-nums">
+                    {store.currency_symbol}
+                    {q.grand_total.toLocaleString()}
+                  </div>
+                  <div className="text-[11px] text-slate-500">{q.items.length} item(s)</div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
+                <span>Date: {q.created_at.slice(0, 10)}</span>
+                <span>Valid: {q.valid_until}</span>
+              </div>
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-200/80">
+                <button
+                  onClick={() => setSelectedQuotationForPrint(q)}
+                  className="flex-1 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold inline-flex items-center justify-center gap-1"
+                >
+                  <Printer className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Print</span>
+                </button>
+                {q.status !== 'converted' && (
+                  <button
+                    onClick={() => handleConvertToSale(q)}
+                    className="flex-1 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-lg text-[11px] font-bold inline-flex items-center justify-center gap-1"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Convert Sale</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {filteredQuotes.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No quotations found. Click "New Price Quotation" to create an estimate.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">
@@ -360,7 +433,7 @@ export const QuotationsManagement: React.FC = () => {
                     )}
                   </td>
                   <td className="p-3 text-slate-600">{q.items.length} item(s)</td>
-                  <td className="p-3 text-right font-mono font-bold text-slate-900">
+                  <td className="p-3 text-right font-mono font-bold text-slate-900 tabular-nums">
                     {store.currency_symbol}
                     {q.grand_total.toLocaleString()}
                   </td>
@@ -423,6 +496,12 @@ export const QuotationsManagement: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveQuotation} className="flex-1 overflow-y-auto space-y-4">
+              {modalError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{modalError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Customer / Client *</label>

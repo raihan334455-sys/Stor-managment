@@ -12,10 +12,73 @@ import {
   CheckCircle2,
   Printer,
   Search,
+  Clock,
+  BadgeCheck,
+  IdCard,
 } from 'lucide-react';
-import { AttendanceStatus, Employee, PaymentMethodType, SalaryPayment } from '../../types';
+import {
+  AttendanceStatus,
+  Employee,
+  EmployeeShiftType,
+  PaymentMethodType,
+  SalaryPayment,
+} from '../../types';
 
-type EmployeeSubTab = 'list' | 'attendance' | 'salary' | 'roles';
+type EmployeeSubTab = 'list' | 'shifts' | 'attendance' | 'salary' | 'roles';
+
+const SHIFT_PRESETS: Record<
+  EmployeeShiftType,
+  { label: string; labelBn: string; start: string; end: string; badgeClass: string }
+> = {
+  morning: {
+    label: 'Morning Shift',
+    labelBn: 'সকাল শিফট',
+    start: '08:00',
+    end: '16:00',
+    badgeClass: 'bg-sky-50 text-sky-700 border-sky-200',
+  },
+  evening: {
+    label: 'Evening Shift',
+    labelBn: 'বিকাল শিফট',
+    start: '14:00',
+    end: '22:00',
+    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+  },
+  night: {
+    label: 'Night Shift',
+    labelBn: 'রাত শিফট',
+    start: '22:00',
+    end: '06:00',
+    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  },
+  full_day: {
+    label: 'Full Day',
+    labelBn: 'সারাদিন',
+    start: '09:00',
+    end: '21:00',
+    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  },
+  custom: {
+    label: 'Custom Shift',
+    labelBn: 'কাস্টম শিফট',
+    start: '09:00',
+    end: '18:00',
+    badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
+  },
+};
+
+const getEmpShiftMeta = (emp: Employee) => {
+  const key: EmployeeShiftType = emp.shift || 'full_day';
+  const preset = SHIFT_PRESETS[key] || SHIFT_PRESETS.full_day;
+  return {
+    key,
+    label: emp.shift_label || preset.label,
+    labelBn: preset.labelBn,
+    start: emp.shift_start || preset.start,
+    end: emp.shift_end || preset.end,
+    badgeClass: preset.badgeClass,
+  };
+};
 
 export const EmployeeManagement: React.FC = () => {
   const {
@@ -31,7 +94,9 @@ export const EmployeeManagement: React.FC = () => {
 
   const [subTab, setSubTab] = useState<EmployeeSubTab>('list');
   const [search, setSearch] = useState('');
+  const [shiftFilter, setShiftFilter] = useState<'all' | EmployeeShiftType>('all');
   const [toast, setToast] = useState<string | null>(null);
+  const [idCardEmp, setIdCardEmp] = useState<Employee | null>(null);
 
   // Add/Edit Employee modal
   const [showEmpModal, setShowEmpModal] = useState(false);
@@ -47,6 +112,9 @@ export const EmployeeManagement: React.FC = () => {
   const [empJoining, setEmpJoining] = useState(new Date().toISOString().split('T')[0]);
   const [empSalary, setEmpSalary] = useState('12000');
   const [empLinkedUser, setEmpLinkedUser] = useState('');
+  const [empShift, setEmpShift] = useState<EmployeeShiftType>('full_day');
+  const [empShiftStart, setEmpShiftStart] = useState('09:00');
+  const [empShiftEnd, setEmpShiftEnd] = useState('21:00');
   const [empActive, setEmpActive] = useState(true);
 
   // Attendance state
@@ -71,15 +139,18 @@ export const EmployeeManagement: React.FC = () => {
 
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return employees.filter(
-      (e) =>
+    return employees.filter((e) => {
+      const empShiftKey = e.shift || 'full_day';
+      const matchesShift = shiftFilter === 'all' || empShiftKey === shiftFilter;
+      const matchesQuery =
         !q ||
         e.name.toLowerCase().includes(q) ||
         e.employee_code.toLowerCase().includes(q) ||
         e.designation.toLowerCase().includes(q) ||
-        e.phone.includes(q)
-    );
-  }, [employees, search]);
+        e.phone.includes(q);
+      return matchesShift && matchesQuery;
+    });
+  }, [employees, search, shiftFilter]);
 
   const openAddEmployee = () => {
     setEditingEmp(null);
@@ -94,11 +165,15 @@ export const EmployeeManagement: React.FC = () => {
     setEmpJoining(new Date().toISOString().split('T')[0]);
     setEmpSalary('12000');
     setEmpLinkedUser('');
+    setEmpShift('full_day');
+    setEmpShiftStart(SHIFT_PRESETS.full_day.start);
+    setEmpShiftEnd(SHIFT_PRESETS.full_day.end);
     setEmpActive(true);
     setShowEmpModal(true);
   };
 
   const openEditEmployee = (e: Employee) => {
+    const meta = getEmpShiftMeta(e);
     setEditingEmp(e);
     setEmpCode(e.employee_code);
     setEmpName(e.name);
@@ -111,14 +186,33 @@ export const EmployeeManagement: React.FC = () => {
     setEmpJoining(e.joining_date);
     setEmpSalary(String(e.basic_salary));
     setEmpLinkedUser(e.linked_user_id || '');
+    setEmpShift(meta.key);
+    setEmpShiftStart(meta.start);
+    setEmpShiftEnd(meta.end);
     setEmpActive(e.active);
     setShowEmpModal(true);
+  };
+
+  const handleQuickShiftChange = (emp: Employee, nextShift: EmployeeShiftType, customStart?: string, customEnd?: string) => {
+    const preset = SHIFT_PRESETS[nextShift];
+    const start = customStart ?? preset.start;
+    const end = customEnd ?? preset.end;
+    saveEmployee({
+      ...emp,
+      shift: nextShift,
+      shift_label: preset.label,
+      shift_start: start,
+      shift_end: end,
+      updated_at: new Date().toISOString(),
+    });
+    showNotice(`${emp.name} (${emp.employee_code}) → ${preset.label} (${start}–${end})`);
   };
 
   const handleSaveEmployee = (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!empName.trim() || !empPhone.trim()) return;
     const now = new Date().toISOString();
+    const preset = SHIFT_PRESETS[empShift];
     saveEmployee({
       id: editingEmp?.id || `emp_${Date.now()}`,
       employee_code: empCode.trim() || `EMP-${Date.now().toString().slice(-3)}`,
@@ -132,6 +226,10 @@ export const EmployeeManagement: React.FC = () => {
       joining_date: empJoining,
       basic_salary: parseFloat(empSalary) || 0,
       linked_user_id: empLinkedUser || undefined,
+      shift: empShift,
+      shift_label: preset.label,
+      shift_start: empShiftStart || preset.start,
+      shift_end: empShiftEnd || preset.end,
       active: empActive,
       created_at: editingEmp?.created_at || now,
       updated_at: now,
@@ -195,9 +293,10 @@ export const EmployeeManagement: React.FC = () => {
       )}
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-print">
+      <div className="flex flex-wrap items-center gap-1.5 pb-1 no-print">
         {[
           { id: 'list', label: 'Employee List', icon: Users },
+          { id: 'shifts', label: 'Employee ID & Shifts', icon: Clock },
           { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
           { id: 'salary', label: 'Salary & Payroll', icon: Banknote },
           { id: 'roles', label: 'User & Role Management', icon: ShieldCheck },
@@ -209,13 +308,13 @@ export const EmployeeManagement: React.FC = () => {
               key={t.id}
               type="button"
               onClick={() => setSubTab(t.id as EmployeeSubTab)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold inline-flex items-center gap-1.5 leading-tight transition-colors cursor-pointer ${
                 active
                   ? 'bg-[#5b46b5] text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{t.label}</span>
             </button>
           );
@@ -225,70 +324,326 @@ export const EmployeeManagement: React.FC = () => {
       {/* TAB 1: EMPLOYEE LIST */}
       {subTab === 'list' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-4">
-          <div className="relative max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search employee name, code, phone, designation..."
-              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs"
-            />
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search employee ID, name, phone, designation..."
+                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { id: 'all', label: 'All Shifts' },
+                  { id: 'morning', label: 'Morning' },
+                  { id: 'evening', label: 'Evening' },
+                  { id: 'night', label: 'Night' },
+                  { id: 'full_day', label: 'Full Day' },
+                ] as const
+              ).map((sf) => (
+                <button
+                  key={sf.id}
+                  type="button"
+                  onClick={() => setShiftFilter(sf.id)}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                    shiftFilter === sf.id
+                      ? 'bg-[#5b46b5] text-white'
+                      : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {sf.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
-                  <th className="py-2 px-3">Code</th>
-                  <th className="py-2 px-3">Employee Name</th>
-                  <th className="py-2 px-3">Designation / Dept</th>
-                  <th className="py-2 px-3">Contact</th>
-                  <th className="py-2 px-3">Joining Date</th>
-                  <th className="py-2 px-3 text-right">Basic Salary</th>
-                  <th className="py-2 px-3 text-center">Status</th>
-                  <th className="py-2 px-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-slate-50">
-                    <td className="py-2 px-3 font-mono font-bold text-[#5b46b5]">{emp.employee_code}</td>
-                    <td className="py-2 px-3 font-bold text-slate-900">{emp.name}</td>
-                    <td className="py-2 px-3">
-                      <div className="font-semibold text-slate-700">{emp.designation}</div>
-                      <div className="text-[10px] text-slate-400">{emp.department || 'General'}</div>
-                    </td>
-                    <td className="py-2 px-3">
-                      <div className="font-mono text-slate-700">{emp.phone}</div>
-                      <div className="text-[10px] text-slate-400">{emp.email || ''}</div>
-                    </td>
-                    <td className="py-2 px-3 font-mono text-slate-500">{emp.joining_date}</td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                      {store.currency_symbol}{emp.basic_salary.toLocaleString()}
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          emp.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                        }`}
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-2.5">
+            {filteredEmployees.map((emp) => {
+              const shiftMeta = getEmpShiftMeta(emp);
+              const linkedUser = users.find((u) => u.id === emp.linked_user_id);
+              return (
+                <div
+                  key={emp.id}
+                  className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded bg-[#5b46b5]/10 text-[#5b46b5] font-mono font-bold text-[11px]">
+                          ID: {emp.employee_code}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold border ${shiftMeta.badgeClass}`}
+                        >
+                          {shiftMeta.label} ({shiftMeta.start}–{shiftMeta.end})
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            emp.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {emp.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      <div className="font-bold text-sm text-slate-900 mt-1 truncate">{emp.name}</div>
+                      <div className="text-[11px] text-slate-600">
+                        {emp.designation} · {emp.department || 'General'}
+                        {linkedUser ? ` · @${linkedUser.username}` : ''}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-mono font-bold text-sm text-slate-900 tabular-nums">
+                        {store.currency_symbol}{emp.basic_salary.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-slate-400">Basic / mo</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-[11px] text-slate-500">
+                    <span className="font-mono truncate">{emp.phone} · {emp.joining_date}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setIdCardEmp(emp)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold inline-flex items-center gap-1 cursor-pointer"
                       >
-                        {emp.active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-right">
+                        <IdCard className="w-3 h-3" />
+                        <span>ID Card</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEditEmployee(emp)}
-                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 font-semibold inline-flex items-center gap-1 cursor-pointer"
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className="w-3 h-3" />
+                        <span>Edit</span>
                       </button>
-                    </td>
-                  </tr>
-                ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
+                  <th className="py-2 px-3">Employee ID</th>
+                  <th className="py-2 px-3">Employee Name</th>
+                  <th className="py-2 px-3">Duty Shift & Time</th>
+                  <th className="py-2 px-3">Designation / Dept</th>
+                  <th className="py-2 px-3">Contact</th>
+                  <th className="py-2 px-3 text-right">Basic Salary</th>
+                  <th className="py-2 px-3 text-center">Status</th>
+                  <th className="py-2 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredEmployees.map((emp) => {
+                  const shiftMeta = getEmpShiftMeta(emp);
+                  const linkedUser = users.find((u) => u.id === emp.linked_user_id);
+                  return (
+                    <tr key={emp.id} className="hover:bg-slate-50">
+                      <td className="py-2 px-3">
+                        <span className="px-2 py-0.5 rounded bg-[#5b46b5]/10 text-[#5b46b5] font-mono font-bold text-[11px]">
+                          {emp.employee_code}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3">
+                        <div className="font-bold text-slate-900">{emp.name}</div>
+                        {linkedUser && (
+                          <div className="text-[10px] font-mono text-emerald-700">POS: @{linkedUser.username}</div>
+                        )}
+                      </td>
+                      <td className="py-2 px-3">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold ${shiftMeta.badgeClass}`}>
+                          <Clock className="w-3 h-3" />
+                          <span>{shiftMeta.label}</span>
+                        </span>
+                        <div className="text-[10px] font-mono text-slate-500 mt-0.5">
+                          {shiftMeta.start} – {shiftMeta.end}
+                        </div>
+                      </td>
+                      <td className="py-2 px-3">
+                        <div className="font-semibold text-slate-700">{emp.designation}</div>
+                        <div className="text-[10px] text-slate-400">{emp.department || 'General'}</div>
+                      </td>
+                      <td className="py-2 px-3">
+                        <div className="font-mono text-slate-700">{emp.phone}</div>
+                        <div className="text-[10px] text-slate-400">{emp.joining_date}</div>
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 tabular-nums">
+                        {store.currency_symbol}{emp.basic_salary.toLocaleString()}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            emp.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {emp.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setIdCardEmp(emp)}
+                            title="View & Print Employee ID Card"
+                            className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <IdCard className="w-3.5 h-3.5" />
+                            <span>ID</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEditEmployee(emp)}
+                            title="Edit Employee"
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: EMPLOYEE ID & SHIFT ROSTER */}
+      {subTab === 'shifts' && (
+        <div className="space-y-4">
+          {/* Shift Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {(['morning', 'evening', 'night', 'full_day'] as EmployeeShiftType[]).map((sKey) => {
+              const meta = SHIFT_PRESETS[sKey];
+              const count = employees.filter((e) => e.active && (e.shift || 'full_day') === sKey).length;
+              return (
+                <div
+                  key={sKey}
+                  className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs flex flex-col justify-between gap-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold ${meta.badgeClass}`}>
+                      {meta.label}
+                    </span>
+                    <span className="font-mono text-lg font-extrabold text-slate-900">{count}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex items-center justify-between">
+                    <span>{meta.labelBn}</span>
+                    <span className="font-mono font-semibold">{meta.start}–{meta.end}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quick Shift Assignment & ID Card Control */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <BadgeCheck className="w-4 h-4 text-[#5b46b5]" />
+                  <span>Staff Shift Assignment & Employee ID Cards (ডিউটি শিফট ও আইডি কার্ড)</span>
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  দ্রুত শিফট পরিবর্তন করুন এবং প্রতিটি কর্মচারীর Employee ID কার্ড প্রিন্ট করুন।
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {employees.map((emp) => {
+                const shiftMeta = getEmpShiftMeta(emp);
+                const linkedUser = users.find((u) => u.id === emp.linked_user_id);
+                return (
+                  <div
+                    key={emp.id}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded bg-[#5b46b5] text-white font-mono font-bold text-[10px]">
+                            {emp.employee_code}
+                          </span>
+                          <span className="font-bold text-sm text-slate-900 truncate">{emp.name}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {emp.designation} {linkedUser ? `· Login: @${linkedUser.username}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIdCardEmp(emp)}
+                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-indigo-50 border border-slate-200 text-indigo-700 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <IdCard className="w-3.5 h-3.5" />
+                        <span>ID Card</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Assigned Shift
+                        </label>
+                        <select
+                          value={shiftMeta.key}
+                          onChange={(e) =>
+                            handleQuickShiftChange(emp, e.target.value as EmployeeShiftType)
+                          }
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold"
+                        >
+                          {(['morning', 'evening', 'night', 'full_day', 'custom'] as EmployeeShiftType[]).map(
+                            (sk) => (
+                              <option key={sk} value={sk}>
+                                {SHIFT_PRESETS[sk].label} ({SHIFT_PRESETS[sk].labelBn})
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Shift Start
+                        </label>
+                        <input
+                          type="time"
+                          value={shiftMeta.start}
+                          onChange={(e) =>
+                            handleQuickShiftChange(emp, shiftMeta.key, e.target.value, shiftMeta.end)
+                          }
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Shift End
+                        </label>
+                        <input
+                          type="time"
+                          value={shiftMeta.end}
+                          onChange={(e) =>
+                            handleQuickShiftChange(emp, shiftMeta.key, shiftMeta.start, e.target.value)
+                          }
+                          className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -312,7 +667,86 @@ export const EmployeeManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Attendance Cards */}
+          <div className="md:hidden space-y-2.5">
+            {employees
+              .filter((e) => e.active)
+              .map((emp) => {
+                const rec = attendance.find(
+                  (a) => a.employee_id === emp.id && a.date === attDate
+                );
+                const monthPrefix = attDate.slice(0, 7);
+                const monthRecs = attendance.filter(
+                  (a) => a.employee_id === emp.id && a.date.startsWith(monthPrefix)
+                );
+                const presentCount = monthRecs.filter((a) => a.status === 'present').length;
+                const absentCount = monthRecs.filter((a) => a.status === 'absent').length;
+                const shiftMeta = getEmpShiftMeta(emp);
+                return (
+                  <div
+                    key={emp.id}
+                    className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-sm text-slate-900">
+                          {emp.name}{' '}
+                          <span className="text-[10px] font-mono text-[#5b46b5]">
+                            ({emp.employee_code})
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                          <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${shiftMeta.badgeClass}`}>
+                            {shiftMeta.label} ({shiftMeta.start}–{shiftMeta.end})
+                          </span>
+                          <span className="text-emerald-700 font-bold">P:{presentCount}</span> ·{' '}
+                          <span className="text-rose-600 font-bold">A:{absentCount}</span>
+                        </div>
+                      </div>
+                      {rec ? (
+                        <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-800 font-bold uppercase text-[10px]">
+                          {rec.status.replace('_', ' ')}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">Not Marked</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(
+                        [
+                          { id: 'present', label: 'Present', cls: 'bg-emerald-50 text-emerald-700' },
+                          { id: 'late', label: 'Late', cls: 'bg-amber-50 text-amber-800' },
+                          { id: 'half_day', label: 'Half Day', cls: 'bg-blue-50 text-blue-700' },
+                          { id: 'leave', label: 'Leave', cls: 'bg-purple-50 text-purple-700' },
+                          { id: 'absent', label: 'Absent', cls: 'bg-rose-50 text-rose-700' },
+                        ] as { id: AttendanceStatus; label: string; cls: string }[]
+                      ).map((btn) => (
+                        <button
+                          key={btn.id}
+                          type="button"
+                          onClick={() => {
+                            markAttendance({
+                              employee_id: emp.id,
+                              date: attDate,
+                              status: btn.id,
+                              check_in: btn.id === 'present' || btn.id === 'late' ? shiftMeta.start : undefined,
+                            });
+                            showNotice(`Marked ${emp.name} (${emp.employee_code}) as ${btn.label}`);
+                          }}
+                          className={`py-2 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                            rec?.status === btn.id ? 'bg-[#5b46b5] text-white' : btn.cls
+                          }`}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -336,12 +770,18 @@ export const EmployeeManagement: React.FC = () => {
                     );
                     const presentCount = monthRecs.filter((a) => a.status === 'present').length;
                     const absentCount = monthRecs.filter((a) => a.status === 'absent').length;
+                    const shiftMeta = getEmpShiftMeta(emp);
                     return (
                       <tr key={emp.id} className="hover:bg-slate-50">
                         <td className="py-2.5 px-3 font-bold text-slate-900">
-                          {emp.name} <span className="text-[10px] font-mono text-slate-400">({emp.employee_code})</span>
+                          {emp.name} <span className="text-[10px] font-mono text-[#5b46b5]">({emp.employee_code})</span>
                         </td>
-                        <td className="py-2.5 px-3 text-slate-600">{emp.designation}</td>
+                        <td className="py-2.5 px-3 text-slate-600">
+                          <div>{emp.designation}</div>
+                          <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded border text-[9px] font-bold ${shiftMeta.badgeClass}`}>
+                            {shiftMeta.label} · {shiftMeta.start}–{shiftMeta.end}
+                          </span>
+                        </td>
                         <td className="py-2.5 px-3 text-[11px] font-mono">
                           <span className="text-emerald-700 font-bold">P:{presentCount}</span> ·{' '}
                           <span className="text-rose-600 font-bold">A:{absentCount}</span>
@@ -374,9 +814,9 @@ export const EmployeeManagement: React.FC = () => {
                                     employee_id: emp.id,
                                     date: attDate,
                                     status: btn.id,
-                                    check_in: btn.id === 'present' || btn.id === 'late' ? '09:00' : undefined,
+                                    check_in: btn.id === 'present' || btn.id === 'late' ? emp.shift_start || '09:00' : undefined,
                                   });
-                                  showNotice(`Marked ${emp.name} as ${btn.label}`);
+                                  showNotice(`Marked ${emp.name} (${emp.employee_code}) as ${btn.label}`);
                                 }}
                                 className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
                                   rec?.status === btn.id
@@ -415,7 +855,70 @@ export const EmployeeManagement: React.FC = () => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile Payroll Cards */}
+            <div className="md:hidden space-y-2.5">
+              {employees
+                .filter((e) => e.active)
+                .map((emp) => {
+                  const paidThisMonth = salaries.find(
+                    (s) => s.employee_id === emp.id && s.month_year === salaryMonth
+                  );
+                  return (
+                    <div
+                      key={emp.id}
+                      className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm text-slate-900 truncate">{emp.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {emp.designation} · Basic {store.currency_symbol}
+                          {emp.basic_salary.toLocaleString()}
+                        </div>
+                        <div className="mt-1">
+                          {paidThisMonth ? (
+                            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                              Paid ({store.currency_symbol}{paidThisMonth.net_paid.toLocaleString()})
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-bold text-[10px]">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="shrink-0">
+                        {paidThisMonth ? (
+                          <button
+                            type="button"
+                            onClick={() => setPrintSlip(paidThisMonth)}
+                            className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-blue-700 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Slip</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPayModalEmp(emp);
+                              setPayBasic(String(emp.basic_salary));
+                              setPayBonus('0');
+                              setPayDeduction('0');
+                              setPayAdvance('0');
+                              setPayNotes('');
+                            }}
+                            className="px-3 py-2 rounded-lg bg-[#ec1f73] hover:bg-[#d61665] text-white text-xs font-bold cursor-pointer"
+                          >
+                            Pay Salary
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -437,7 +940,7 @@ export const EmployeeManagement: React.FC = () => {
                         <tr key={emp.id} className="hover:bg-slate-50">
                           <td className="py-2 px-3 font-bold text-slate-900">{emp.name}</td>
                           <td className="py-2 px-3 text-slate-600">{emp.designation}</td>
-                          <td className="py-2 px-3 text-right font-mono font-bold">
+                          <td className="py-2 px-3 text-right font-mono font-bold tabular-nums">
                             {store.currency_symbol}{emp.basic_salary.toLocaleString()}
                           </td>
                           <td className="py-2 px-3 text-center">
@@ -488,7 +991,44 @@ export const EmployeeManagement: React.FC = () => {
 
           <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
             <h3 className="text-sm font-bold text-slate-900">Salary Payment History ({salaries.length})</h3>
-            <div className="overflow-x-auto">
+            {/* Mobile Salary History Cards */}
+            <div className="md:hidden space-y-2.5">
+              {salaries.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No salary payments issued yet.
+                </div>
+              ) : (
+                salaries.map((s) => (
+                  <div
+                    key={s.id}
+                    className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-mono font-bold text-[11px] text-[#5b46b5]">
+                        {s.voucher_number} · {s.month_year}
+                      </div>
+                      <div className="font-bold text-sm text-slate-900 truncate">{s.employee_name}</div>
+                      <div className="text-[11px] font-mono text-slate-500">{s.payment_date}</div>
+                    </div>
+                    <div className="text-right shrink-0 space-y-1">
+                      <div className="font-mono font-bold text-sm text-emerald-700 tabular-nums">
+                        {store.currency_symbol}{s.net_paid.toLocaleString()}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPrintSlip(s)}
+                        className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-blue-700 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Printer className="w-3 h-3" />
+                        <span>Print</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -514,7 +1054,7 @@ export const EmployeeManagement: React.FC = () => {
                         <td className="py-2 px-3 font-bold text-slate-800">{s.employee_name}</td>
                         <td className="py-2 px-3 font-mono">{s.month_year}</td>
                         <td className="py-2 px-3 font-mono text-slate-500">{s.payment_date}</td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
+                        <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700 tabular-nums">
                           {store.currency_symbol}{s.net_paid.toLocaleString()}
                         </td>
                         <td className="py-2 px-3 text-right">
@@ -547,7 +1087,7 @@ export const EmployeeManagement: React.FC = () => {
       {/* ADD / EDIT EMPLOYEE MODAL */}
       {showEmpModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveEmployee} className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-3 text-xs">
+          <form onSubmit={handleSaveEmployee} className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900">
                 {editingEmp ? 'Edit Employee Profile' : 'Add New Employee'}
@@ -558,12 +1098,41 @@ export const EmployeeManagement: React.FC = () => {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Employee Code</label>
-                <input type="text" value={empCode} onChange={(e) => setEmpCode(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2 font-mono" />
+                <label className="block font-semibold text-slate-700 mb-1">Employee ID (কোড)</label>
+                <input type="text" value={empCode} onChange={(e) => setEmpCode(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-[#5b46b5]" />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Full Name *</label>
                 <input type="text" required value={empName} onChange={(e) => setEmpName(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Duty Shift (শিফট)</label>
+                <select
+                  value={empShift}
+                  onChange={(e) => {
+                    const next = e.target.value as EmployeeShiftType;
+                    setEmpShift(next);
+                    setEmpShiftStart(SHIFT_PRESETS[next].start);
+                    setEmpShiftEnd(SHIFT_PRESETS[next].end);
+                  }}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 font-semibold"
+                >
+                  {(['morning', 'evening', 'night', 'full_day', 'custom'] as EmployeeShiftType[]).map((sk) => (
+                    <option key={sk} value={sk}>
+                      {SHIFT_PRESETS[sk].label} ({SHIFT_PRESETS[sk].labelBn})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Shift Start</label>
+                  <input type="time" value={empShiftStart} onChange={(e) => setEmpShiftStart(e.target.value)} className="w-full border border-slate-300 rounded-xl px-2.5 py-2 font-mono" />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Shift End</label>
+                  <input type="time" value={empShiftEnd} onChange={(e) => setEmpShiftEnd(e.target.value)} className="w-full border border-slate-300 rounded-xl px-2.5 py-2 font-mono" />
+                </div>
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Designation *</label>
@@ -624,7 +1193,7 @@ export const EmployeeManagement: React.FC = () => {
       {/* PAY SALARY MODAL */}
       {payModalEmp && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handlePaySalarySubmit} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3 text-xs">
+          <form onSubmit={handlePaySalarySubmit} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-5 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900">
                 Pay Salary — {payModalEmp.name} ({salaryMonth})
@@ -688,7 +1257,7 @@ export const EmployeeManagement: React.FC = () => {
       {/* SALARY SLIP MODAL */}
       {printSlip && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-xs print:max-h-none print:overflow-visible">
             <div className="text-center border-b border-slate-200 pb-3">
               <div className="text-base font-extrabold text-slate-900">{store.store_name}</div>
               <div className="text-[11px] text-slate-500">{store.store_address}</div>
@@ -722,6 +1291,91 @@ export const EmployeeManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* EMPLOYEE ID CARD MODAL */}
+      {idCardEmp && (() => {
+        const meta = getEmpShiftMeta(idCardEmp);
+        const linkedUser = users.find((u) => u.id === idCardEmp.linked_user_id);
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl text-xs print:shadow-none">
+              <div className="bg-gradient-to-r from-[#091f46] via-[#0d3577] to-[#0b56b8] text-white p-5 text-center space-y-2">
+                {store.store_logo && (
+                  <img
+                    src={store.store_logo}
+                    alt={store.store_name}
+                    className="w-12 h-12 rounded-xl object-cover mx-auto border border-white/30 bg-white"
+                  />
+                )}
+                <div className="font-extrabold text-sm tracking-wide">{store.store_name}</div>
+                {store.store_address && (
+                  <div className="text-[10px] text-blue-100 leading-tight">{store.store_address}</div>
+                )}
+                <div className="inline-block px-3 py-1 rounded-full bg-emerald-500 text-white font-mono font-extrabold text-[11px] tracking-wider">
+                  ID: {idCardEmp.employee_code}
+                </div>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="text-center space-y-1">
+                  <div className="w-16 h-16 rounded-2xl bg-[#5b46b5]/10 border border-[#5b46b5]/25 text-[#5b46b5] font-extrabold text-2xl flex items-center justify-center mx-auto">
+                    {idCardEmp.name.charAt(0).toUpperCase()}
+                  </div>
+                  <h3 className="text-base font-extrabold text-slate-900 pt-1">{idCardEmp.name}</h3>
+                  <p className="text-xs font-semibold text-[#5b46b5]">
+                    {idCardEmp.designation} {idCardEmp.department ? `· ${idCardEmp.department}` : ''}
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-semibold">Duty Shift:</span>
+                    <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${meta.badgeClass}`}>
+                      {meta.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-semibold">Shift Timing:</span>
+                    <span className="font-mono font-bold text-slate-800">{meta.start} – {meta.end}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-semibold">Phone:</span>
+                    <span className="font-mono font-semibold text-slate-800">{idCardEmp.phone}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-semibold">Joined:</span>
+                    <span className="font-mono text-slate-700">{idCardEmp.joining_date}</span>
+                  </div>
+                  {linkedUser && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-semibold">POS Login ID:</span>
+                      <span className="font-mono font-bold text-emerald-700">@{linkedUser.username}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 no-print">
+                  <button
+                    type="button"
+                    onClick={() => setIdCardEmp(null)}
+                    className="flex-1 py-2 border border-slate-200 rounded-xl font-semibold text-slate-600 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex-1 py-2 bg-[#0b56b8] hover:bg-[#09479a] text-white rounded-xl font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print ID Card</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

@@ -354,7 +354,58 @@ export const AccountsManagement: React.FC = () => {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-2.5">
+            {incomes.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No additional income entries yet.
+              </div>
+            ) : (
+              incomes.map((inc) => (
+                <div
+                  key={inc.id}
+                  className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-mono text-[11px] font-bold text-[#5b46b5]">
+                        {inc.income_number}
+                      </div>
+                      <div className="font-bold text-sm text-slate-900 truncate">{inc.title}</div>
+                      {inc.reference && (
+                        <div className="text-[10px] text-slate-400">Ref: {inc.reference}</div>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-mono font-bold text-sm text-emerald-700 tabular-nums">
+                        +{store.currency_symbol}{inc.amount.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] uppercase font-semibold text-slate-500">
+                        {inc.payment_method}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/80 text-[11px] text-slate-500">
+                    <span>
+                      {inc.category} · <span className="font-mono">{inc.date}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        deleteIncome(inc.id);
+                        showNotice('Income entry removed.');
+                      }}
+                      className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-rose-600 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -385,7 +436,7 @@ export const AccountsManagement: React.FC = () => {
                       </td>
                       <td className="py-2 px-3 text-slate-600">{inc.category}</td>
                       <td className="py-2 px-3 uppercase font-semibold text-slate-600">{inc.payment_method}</td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
+                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700 tabular-nums">
                         +{store.currency_symbol}{inc.amount.toLocaleString()}
                       </td>
                       <td className="py-2 px-3 text-right">
@@ -446,7 +497,56 @@ export const AccountsManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Cards */}
+          <div className="md:hidden space-y-2.5">
+            {cashFlows.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No cash in/out entries recorded yet.
+              </div>
+            ) : (
+              cashFlows.map((cf) => (
+                <div
+                  key={cf.id}
+                  className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-[11px] text-slate-700">
+                          {cf.entry_number}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            cf.type === 'cash_in'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-50 text-amber-800'
+                          }`}
+                        >
+                          {cf.type === 'cash_in' ? 'Cash In' : 'Cash Out'}
+                        </span>
+                      </div>
+                      <div className="font-bold text-sm text-slate-900 mt-0.5 truncate">{cf.title}</div>
+                      <div className="text-[11px] text-slate-600">{cf.source_or_purpose}</div>
+                    </div>
+                    <div
+                      className={`font-mono font-bold text-sm shrink-0 tabular-nums ${
+                        cf.type === 'cash_in' ? 'text-emerald-700' : 'text-amber-700'
+                      }`}
+                    >
+                      {cf.type === 'cash_in' ? '+' : '-'}
+                      {store.currency_symbol}{cf.amount.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono pt-1.5 border-t border-slate-200/80 flex justify-between">
+                    <span>{cf.date} {cf.time}</span>
+                    <span className="font-sans">By: {cf.created_by}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -486,7 +586,7 @@ export const AccountsManagement: React.FC = () => {
                       <td className="py-2 px-3 text-slate-600">{cf.source_or_purpose}</td>
                       <td className="py-2 px-3 text-slate-500">{cf.created_by}</td>
                       <td
-                        className={`py-2 px-3 text-right font-mono font-bold ${
+                        className={`py-2 px-3 text-right font-mono font-bold tabular-nums ${
                           cf.type === 'cash_in' ? 'text-emerald-700' : 'text-amber-700'
                         }`}
                       >
@@ -565,7 +665,54 @@ export const AccountsManagement: React.FC = () => {
               <ReceiptText className="w-4 h-4 text-[#5b46b5]" />
               <span>Recent Account Transactions</span>
             </h3>
-            <div className="overflow-x-auto">
+            {/* Mobile Cards */}
+            <div className="md:hidden space-y-2.5">
+              {financialAccountTxs.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No deposits or withdrawals recorded yet.
+                </div>
+              ) : (
+                financialAccountTxs.slice(0, 30).map((tx) => (
+                  <div
+                    key={tx.id}
+                    className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-slate-900 truncate">
+                          {tx.account_name}
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            tx.tx_type === 'deposit'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-rose-50 text-rose-700'
+                          }`}
+                        >
+                          {tx.tx_type}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                        {tx.reference || tx.notes || '—'}
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                        {tx.date} {tx.time}
+                      </div>
+                    </div>
+                    <div
+                      className={`font-mono font-bold text-sm shrink-0 tabular-nums ${
+                        tx.tx_type === 'deposit' ? 'text-emerald-700' : 'text-rose-600'
+                      }`}
+                    >
+                      {tx.tx_type === 'deposit' ? '+' : '-'}
+                      {store.currency_symbol}{tx.amount.toLocaleString()}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -603,7 +750,7 @@ export const AccountsManagement: React.FC = () => {
                           {tx.reference || tx.notes || '—'}
                         </td>
                         <td
-                          className={`py-2 px-3 text-right font-mono font-bold ${
+                          className={`py-2 px-3 text-right font-mono font-bold tabular-nums ${
                             tx.tx_type === 'deposit' ? 'text-emerald-700' : 'text-rose-600'
                           }`}
                         >
@@ -630,7 +777,7 @@ export const AccountsManagement: React.FC = () => {
       {/* ADD INCOME MODAL */}
       {showIncomeModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateIncome} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3 text-xs">
+          <form onSubmit={handleCreateIncome} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-5 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900">Record Other Income</h3>
               <button type="button" onClick={() => setShowIncomeModal(false)} className="text-slate-400 cursor-pointer">
@@ -681,7 +828,7 @@ export const AccountsManagement: React.FC = () => {
       {/* CASH IN / OUT MODAL */}
       {cashFlowModalType && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateCashFlow} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3 text-xs">
+          <form onSubmit={handleCreateCashFlow} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-5 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900">
                 {cashFlowModalType === 'cash_in' ? 'Record Cash In' : 'Record Cash Out'}
@@ -719,7 +866,7 @@ export const AccountsManagement: React.FC = () => {
       {/* ADD BANK / MOBILE ACCOUNT MODAL */}
       {accModalType && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleCreateAccount} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3 text-xs">
+          <form onSubmit={handleCreateAccount} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-5 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900">
                 {accModalType === 'bank' ? 'Add Bank Account' : 'Add Mobile Banking Wallet'}
@@ -765,7 +912,7 @@ export const AccountsManagement: React.FC = () => {
       {/* ACCOUNT DEPOSIT / WITHDRAW MODAL */}
       {txTarget && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleRecordAccountTx} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3 text-xs">
+          <form onSubmit={handleRecordAccountTx} className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-5 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900 capitalize">
                 {txTarget.txType} — {txTarget.account.provider_name}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Package,
@@ -77,7 +77,7 @@ const renderBarcodeSvg = (code: string) => {
   );
 };
 
-export const GeneralProductManagement: React.FC = () => {
+export const GeneralProductManagement: React.FC<{ initialTab?: GeneralSubTab }> = ({ initialTab }) => {
   const {
     store,
     updateStore,
@@ -102,7 +102,12 @@ export const GeneralProductManagement: React.FC = () => {
   const canManageSettings = checkPermission('settings_manage');
   const canEditProducts = checkPermission('product_manage');
 
-  const [subTab, setSubTab] = useState<GeneralSubTab>('list');
+  const [subTab, setSubTab] = useState<GeneralSubTab>(initialTab || 'list');
+  useEffect(() => {
+    if (initialTab) {
+      setSubTab(initialTab);
+    }
+  }, [initialTab]);
   const [search, setSearch] = useState('');
   const [selectedCatFilter, setSelectedCatFilter] = useState('all');
   const [toast, setToast] = useState<string | null>(null);
@@ -639,7 +644,7 @@ export const GeneralProductManagement: React.FC = () => {
       {/* Header + Module ON/OFF Toggle */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#ec1f73] text-white flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-r from-[#0b6ff2] to-[#1b8cff] text-white flex items-center justify-center shrink-0">
             <Package className="w-6 h-6" />
           </div>
           <div>
@@ -665,7 +670,7 @@ export const GeneralProductManagement: React.FC = () => {
             <button
               type="button"
               onClick={openAddProduct}
-              className="px-4 py-2 rounded-xl bg-[#5b46b5] hover:bg-[#4b389b] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-[#0f6ae6] hover:bg-[#0c56bd] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Add Product</span>
@@ -682,7 +687,7 @@ export const GeneralProductManagement: React.FC = () => {
       )}
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-print">
+      <div className="flex flex-wrap items-center gap-1.5 pb-1 no-print">
         {[
           { id: 'list', label: 'Product List', icon: Package },
           { id: 'categories', label: 'Product Categories', icon: Tag },
@@ -698,13 +703,13 @@ export const GeneralProductManagement: React.FC = () => {
               key={t.id}
               type="button"
               onClick={() => setSubTab(t.id as GeneralSubTab)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold inline-flex items-center gap-1.5 leading-tight transition-colors cursor-pointer ${
                 active
-                  ? 'bg-[#5b46b5] text-white shadow-xs'
+                  ? 'bg-[#0f6ae6] text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{t.label}</span>
             </button>
           );
@@ -739,7 +744,82 @@ export const GeneralProductManagement: React.FC = () => {
             </select>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile Product Cards */}
+          <div className="md:hidden space-y-2.5">
+            {filteredProducts.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 text-xs">No general products found.</div>
+            ) : (
+              filteredProducts.map((p) => {
+                const v = p.variants[0];
+                const cat = categories.find((c) => c.id === p.category_id);
+                const totalStock = p.variants.reduce((s, item) => s + item.stock_quantity, 0);
+                return (
+                  <div key={p.id} className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/40">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {p.image ? (
+                          <img src={p.image} alt={p.name} className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                            <Package className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-xs truncate">
+                            {p.name}
+                            {p.variants.length > 1 && (
+                              <span className="ml-1 text-[10px] font-mono text-indigo-600">({p.variants.length}v)</span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-600 truncate">
+                            {cat?.name || 'General'} · {p.brand_name || '—'}
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-400 truncate">
+                            {v?.barcode || p.code} · Rack: {p.rack_number || '—'}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                        p.active !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      }`}>
+                        {p.active !== false ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Buy</span>
+                        <span className="font-mono text-slate-700">{store.currency_symbol}{v?.purchase_price ?? 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Sale Price</span>
+                        <span className="font-mono font-bold text-slate-900">{store.currency_symbol}{v?.selling_price ?? 0}/{v ? getVariantBaseUnit(v) : 'pc'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block">Stock</span>
+                        <span className={`font-mono font-bold ${totalStock <= (v?.min_stock_level || 5) ? 'text-rose-600' : 'text-emerald-700'}`}>
+                          {v ? formatStockBreakdown(totalStock, v) : totalStock}
+                        </span>
+                      </div>
+                    </div>
+                    {canEditProducts && (
+                      <div className="flex justify-end gap-1.5 pt-1 border-t border-slate-100">
+                        <button type="button" onClick={() => openEditProduct(p)} className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer">
+                          <Edit2 className="w-3 h-3 text-indigo-600" />
+                          <span>Edit</span>
+                        </button>
+                        <button type="button" onClick={() => { archiveProduct(p.id); showNotice(`Archived ${p.name}`); }} className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-rose-600 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer">
+                          <Trash2 className="w-3 h-3" />
+                          <span>Archive</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px]">
@@ -919,6 +999,21 @@ export const GeneralProductManagement: React.FC = () => {
 
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
             <h3 className="text-sm font-bold text-slate-900 mb-3">General Categories ({generalCategories.length})</h3>
+            <div className="md:hidden space-y-2">
+              {generalCategories.map((c) => (
+                <div key={c.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">{c.name} <span className="font-mono text-[10px] text-slate-500">{c.code || ''}</span></div>
+                    {c.description && <div className="text-[11px] text-slate-500 truncate">{c.description}</div>}
+                  </div>
+                  <div className="inline-flex gap-1 shrink-0">
+                    <button type="button" onClick={() => { setEditingCat(c); setCatName(c.name); setCatCode(c.code || ''); setCatDesc(c.description || ''); }} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => { deleteCategory(c.id); showNotice('Category deleted.'); }} className="p-1.5 rounded-lg bg-slate-100 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -964,6 +1059,7 @@ export const GeneralProductManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1020,6 +1116,21 @@ export const GeneralProductManagement: React.FC = () => {
 
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
             <h3 className="text-sm font-bold text-slate-900 mb-3">Brands ({brands.length})</h3>
+            <div className="md:hidden space-y-2">
+              {brands.map((b) => (
+                <div key={b.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">{b.name}</div>
+                    {b.description && <div className="text-[11px] text-slate-500 truncate">{b.description}</div>}
+                  </div>
+                  <div className="inline-flex gap-1 shrink-0">
+                    <button type="button" onClick={() => { setEditingBrand(b); setBrandName(b.name); setBrandDesc(b.description || ''); }} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => { deleteBrand(b.id); showNotice('Brand removed.'); }} className="p-1.5 rounded-lg bg-slate-100 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1062,6 +1173,7 @@ export const GeneralProductManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1130,6 +1242,21 @@ export const GeneralProductManagement: React.FC = () => {
 
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
             <h3 className="text-sm font-bold text-slate-900 mb-3">Units ({units.length})</h3>
+            <div className="md:hidden space-y-2">
+              {units.map((u) => (
+                <div key={u.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                  <div>
+                    <div className="font-bold text-slate-800">{u.name} <span className="font-mono text-indigo-600">({u.short_name})</span></div>
+                    <div className="text-[11px] text-slate-500">Decimal: {u.is_decimal_allowed ? 'Yes' : 'No'}</div>
+                  </div>
+                  <div className="inline-flex gap-1 shrink-0">
+                    <button type="button" onClick={() => { setEditingUnit(u); setUnitName(u.name); setUnitShort(u.short_name); setUnitDecimal(Boolean(u.is_decimal_allowed)); }} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => { deleteUnit(u.id); showNotice('Unit deleted.'); }} className="p-1.5 rounded-lg bg-slate-100 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1175,6 +1302,7 @@ export const GeneralProductManagement: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1183,7 +1311,35 @@ export const GeneralProductManagement: React.FC = () => {
       {subTab === 'stock' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
           <h2 className="text-sm font-bold text-slate-900">General Product Stock</h2>
-          <div className="overflow-x-auto">
+          <div className="md:hidden space-y-2">
+            {flatVariants.map(({ product, variant }) => (
+              <div key={variant.id} className="border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-slate-800">{product.name} ({variant.variant_name})</div>
+                    <div className="text-[11px] text-slate-500">{product.brand_name || '—'} · Min: {variant.min_stock_level}</div>
+                  </div>
+                  <span className={`font-mono font-bold ${variant.stock_quantity <= variant.min_stock_level ? 'text-rose-600' : 'text-emerald-700'}`}>
+                    {formatStockBreakdown(variant.stock_quantity, variant)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                  <span className="text-[11px] font-mono text-slate-600">
+                    Cost: {store.currency_symbol}{(variant.stock_quantity * variant.purchase_price).toLocaleString()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setStockEditTarget({ product, variant, newStock: String(variant.stock_quantity), reason: 'General product stock audit' })}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 text-indigo-700 font-semibold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>Adjust</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-[10px] text-slate-500 uppercase">
@@ -1328,10 +1484,10 @@ export const GeneralProductManagement: React.FC = () => {
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
             <div className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
-              {/* Blue-accent General Product Header */}
-              <div className="px-5 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between shrink-0">
+              {/* Royal Azure Blue General Product Header matching reference image */}
+              <div className="px-5 py-3.5 bg-gradient-to-r from-[#0b6ff2] via-[#1b8cff] to-[#34a4ff] text-white flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-full bg-white/20 border border-white/30 flex items-center justify-center">
                     <Package className="w-5 h-5" />
                   </div>
                   <div>
@@ -2107,27 +2263,27 @@ export const GeneralProductManagement: React.FC = () => {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button
-                      type="button"
-                      onClick={() => setShowProdModal(false)}
-                      className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-600 cursor-pointer"
+                      type="submit"
+                      className="px-5 py-2 bg-[#16a34a] hover:bg-[#15803d] text-white rounded-xl font-bold cursor-pointer"
                     >
-                      Cancel
+                      {editingProd ? 'Update Product' : 'Save Product'}
                     </button>
                     {!editingProd && (
                       <button
                         type="button"
                         onClick={(e) => handleSaveProduct(e, true)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold cursor-pointer inline-flex items-center gap-1"
+                        className="px-4 py-2 bg-[#0f6ae6] hover:bg-[#0c56bd] text-white rounded-xl font-bold cursor-pointer inline-flex items-center gap-1"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Save &amp; Add Another</span>
                       </button>
                     )}
                     <button
-                      type="submit"
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer"
+                      type="button"
+                      onClick={() => setShowProdModal(false)}
+                      className="px-4 py-2 bg-slate-500 hover:bg-slate-600 text-white rounded-xl font-semibold cursor-pointer"
                     >
-                      {editingProd ? 'Update Product' : 'Save Product'}
+                      Cancel
                     </button>
                   </div>
                 </div>

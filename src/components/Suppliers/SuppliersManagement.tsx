@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Users,
@@ -19,7 +19,9 @@ import {
 } from 'lucide-react';
 import { Supplier, PaymentMethodType } from '../../types';
 
-export const SuppliersManagement: React.FC = () => {
+export const SuppliersManagement: React.FC<{ initialFilterDueOnly?: boolean }> = ({
+  initialFilterDueOnly = false,
+}) => {
   const {
     suppliers,
     purchases,
@@ -31,7 +33,10 @@ export const SuppliersManagement: React.FC = () => {
   } = useApp();
 
   const [search, setSearch] = useState('');
-  const [filterDueOnly, setFilterDueOnly] = useState(false);
+  const [filterDueOnly, setFilterDueOnly] = useState(initialFilterDueOnly);
+  useEffect(() => {
+    setFilterDueOnly(initialFilterDueOnly);
+  }, [initialFilterDueOnly]);
   const [selectedSupplierForLedger, setSelectedSupplierForLedger] = useState<Supplier | null>(null);
 
   // Add/Edit Supplier Modal
@@ -232,7 +237,52 @@ export const SuppliersManagement: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="md:hidden divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+          {filteredSuppliers.map((sup) => (
+            <div key={sup.id} className="p-3 space-y-2 text-xs bg-white">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center text-xs shrink-0">
+                    {sup.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800 truncate">{sup.name}</div>
+                    <div className="text-[11px] text-slate-500 truncate">{sup.company_name} · {sup.mobile}</div>
+                  </div>
+                </div>
+                {sup.total_due > 0 ? (
+                  <span className="text-amber-700 font-bold font-mono bg-amber-50 px-2 py-0.5 rounded border border-amber-200 shrink-0">
+                    Due {store.currency_symbol}{sup.total_due.toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-emerald-600 font-semibold text-[11px] shrink-0">Cleared</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px]">
+                <div className="font-mono text-slate-600">
+                  Buy {store.currency_symbol}{sup.total_purchases.toLocaleString()} · Paid {store.currency_symbol}{sup.total_paid.toLocaleString()}
+                </div>
+                <div className="flex items-center gap-1">
+                  {sup.total_due > 0 && (
+                    <button onClick={() => handleOpenPayDue(sup)} className="px-2 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded text-[11px] font-bold cursor-pointer">
+                      Pay
+                    </button>
+                  )}
+                  <button onClick={() => setSelectedSupplierForLedger(sup)} className="px-2 py-1 bg-slate-50 border border-slate-200 text-slate-700 rounded text-[11px] font-semibold cursor-pointer">
+                    Ledger
+                  </button>
+                  <button onClick={() => handleOpenEdit(sup)} className="p-1 bg-slate-50 border border-slate-200 text-slate-700 rounded cursor-pointer">
+                    <Edit className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {filteredSuppliers.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">No suppliers match the current search or filter.</div>
+          )}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">
@@ -580,6 +630,57 @@ export const SuppliersManagement: React.FC = () => {
             </div>
 
             <div className="overflow-auto flex-1 border border-slate-200 rounded-xl">
+              <div className="md:hidden divide-y divide-slate-100">
+                {supplierDues
+                  .filter((d) => d.supplier_id === selectedSupplierForLedger.id)
+                  .map((tx) => {
+                    const liveSup = suppliers.find((s) => s.id === tx.supplier_id);
+                    const isSupCleared =
+                      tx.type === 'due_payment' &&
+                      (tx.balance_after <= 0 || (liveSup !== undefined && liveSup.total_due <= 0));
+                    return (
+                      <div key={tx.id} className="p-3 space-y-1.5 text-xs">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              tx.type === 'due_added'
+                                ? 'bg-amber-100 text-amber-800'
+                                : isSupCleared
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {tx.type === 'due_added' ? 'Purchase Credit' : isSupCleared ? 'Due Cleared' : 'Payment'}
+                            </span>
+                            <div className="text-[10px] font-mono text-slate-500 mt-1">{tx.date} {tx.time}</div>
+                            <div className="text-[11px] text-slate-700">{tx.description}</div>
+                          </div>
+                          <div className="text-right font-mono shrink-0">
+                            <div className="font-bold text-emerald-600">Paid {store.currency_symbol}{tx.paid_amount.toLocaleString()}</div>
+                            <div className="text-[11px] font-bold text-amber-700">Bal {store.currency_symbol}{tx.balance_after.toLocaleString()}</div>
+                          </div>
+                        </div>
+                        {tx.type === 'due_payment' && (
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setPrintableReceipt({ type: 'supplier_due', data: tx })}
+                              className="px-2 py-1 rounded bg-white border border-slate-200 text-[10px] font-semibold text-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Printer className="w-3 h-3 text-emerald-600" />
+                              <span>Receipt</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                {supplierDues.filter((d) => d.supplier_id === selectedSupplierForLedger.id).length === 0 && (
+                  <div className="p-6 text-center text-slate-400 text-xs">
+                    No transactions recorded in ledger for this supplier.
+                  </div>
+                )}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
@@ -660,6 +761,7 @@ export const SuppliersManagement: React.FC = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

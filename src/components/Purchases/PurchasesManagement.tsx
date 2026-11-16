@@ -427,7 +427,36 @@ export const PurchasesManagement: React.FC = () => {
             </h2>
             <span className="text-xs text-slate-500">{purchaseReturns.length} return(s) recorded</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="md:hidden divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+            {purchaseReturns.map((pr) => (
+              <div key={pr.id} className="p-3 space-y-1.5 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-mono font-bold text-rose-600">{pr.return_number}</div>
+                    <div className="font-semibold text-slate-800">{pr.supplier_name}</div>
+                    <div className="text-[10px] font-mono text-slate-500">{pr.date} {pr.time} · Ref: {pr.purchase_number || 'Direct'}</div>
+                  </div>
+                  <div className="text-right font-mono font-bold text-rose-700 shrink-0">
+                    {store.currency_symbol}{pr.total_refund.toLocaleString()}
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  {pr.items.map((it) => `${it.product_name} (${it.quantity})`).join(', ')}
+                </div>
+                <div>
+                  <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-bold uppercase text-slate-700">
+                    {pr.refund_mode.replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {purchaseReturns.length === 0 && (
+              <div className="p-8 text-center text-slate-400 text-xs">
+                No purchase returns recorded yet. Click &ldquo;Purchase Return&rdquo; above to return damaged or excess stock to a supplier.
+              </div>
+            )}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">
@@ -493,7 +522,47 @@ export const PurchasesManagement: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="md:hidden divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+          {filteredPurchases.map((pur) => {
+            const liveSup = suppliers.find((s) => s.id === pur.supplier_id);
+            const dueCleared = pur.due_amount <= 0 || (liveSup && liveSup.total_due <= 0);
+            return (
+              <div key={pur.id} className="p-3 space-y-2 text-xs bg-white">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-mono font-bold text-indigo-600">{pur.purchase_number}</div>
+                    <div className="font-semibold text-slate-800">{pur.supplier_name}</div>
+                    <div className="text-[10px] font-mono text-slate-500">{pur.purchase_date} · {pur.items.length} item(s)</div>
+                  </div>
+                  <div className="text-right font-mono shrink-0">
+                    <div className="font-bold text-slate-900">{store.currency_symbol}{pur.grand_total.toLocaleString()}</div>
+                    <div className="text-[11px] font-semibold text-emerald-600">Paid {store.currency_symbol}{pur.paid_amount.toLocaleString()}</div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                  {dueCleared ? (
+                    <span className="text-[11px] font-semibold text-emerald-600">Cleared</span>
+                  ) : (
+                    <span className="text-[11px] font-mono font-bold text-amber-600">Due {store.currency_symbol}{pur.due_amount.toLocaleString()}</span>
+                  )}
+                  <button
+                    onClick={() => setSelectedPurchase(pur)}
+                    className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <FileText className="w-3 h-3 text-indigo-600" />
+                    <span>Details</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {filteredPurchases.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No purchase inward records found. Click &ldquo;New Stock Inward&rdquo; to add stock.
+            </div>
+          )}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">

@@ -40,6 +40,8 @@ import {
   AttendanceStatus,
   SalaryPayment,
   BatchLot,
+  StockAdjustmentType,
+  StockAdjustmentRecord,
 } from '../types';
 import { DBStorage } from '../db/storage';
 import { getVariantBaseUnit } from '../utils/packaging';
@@ -61,9 +63,14 @@ import {
   verifyUsersDirectoryIntegrity,
 } from '../utils/security';
 
+import { testFirestoreConnection } from '../services/firebaseFirestoreSync';
+
 interface AppContextType {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  tabHistory: string[];
+  canGoBack: boolean;
+  goBack: () => void;
   activeUser: User;
   setActiveUser: (user: User) => void;
   users: User[];
@@ -82,6 +89,7 @@ interface AppContextType {
   cashSessions: CashSession[];
   auditLogs: AuditLog[];
   stockTransactions: StockTransaction[];
+  stockAdjustments: StockAdjustmentRecord[];
   returns: SaleReturn[];
   quotations: Quotation[];
   heldCarts: HeldCart[];
@@ -190,6 +198,16 @@ interface AppContextType {
     to_location: string;
     notes?: string;
   }) => StockTransfer | null;
+  recordStockAdjustment: (input: {
+    variant_id: string;
+    adjustment_type: StockAdjustmentType;
+    direction?: 'deduct' | 'add';
+    quantity: number;
+    date?: string;
+    reason: string;
+    note?: string;
+    taken_by?: string;
+  }) => { success: boolean; record?: StockAdjustmentRecord; message?: string };
 
   // Accounts Management
   addIncome: (data: Omit<AccountIncome, 'id' | 'income_number' | 'created_at' | 'created_by' | 'branch_id'>) => AccountIncome;
@@ -282,18 +300,85 @@ const DEFAULT_BOOT_USER: User = {
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isStorageReady, setIsStorageReady] = useState<boolean>(false);
   const [activeTab, setActiveTabState] = useState<string>('pos');
+  const [tabHistory, setTabHistory] = useState<string[]>([]);
   const [store, setStore] = useState<StoreSettings>(DBStorage.getStore());
   const [users, setUsers] = useState<User[]>(DBStorage.getUsers());
   const [activeUser, setActiveUser] = useState<User>(DEFAULT_BOOT_USER);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const setActiveTab = (tab: string) => {
-    if (isAuthenticated && !canAccessTab(activeUser, tab)) {
-      setActiveTabState('pos');
+    const resolvedTab =
+      isAuthenticated && !canAccessTab(activeUser, tab) ? 'pos' : tab;
+    if (resolvedTab === activeTab) return;
+
+    setTabHistory((prev) => [...prev.slice(-29), activeTab]);
+    setActiveTabState(resolvedTab);
+    try {
+      window.history.pushState({ posTab: resolvedTab }, '', `#${resolvedTab}`);
+    } catch {
+      // ignore sandboxed history errors
+    }
+  };
+
+  const canGoBack = tabHistory.length > 0 || activeTab !== 'dashboard';
+
+  const goBack = () => {
+    if (tabHistory.length > 0) {
+      const nextHistory = [...tabHistory];
+      let target = nextHistory.pop() || 'dashboard';
+      while (
+        nextHistory.length > 0 &&
+        (target === activeTab || (isAuthenticated && !canAccessTab(activeUser, target)))
+      ) {
+        target = nextHistory.pop() || 'dashboard';
+      }
+      if (isAuthenticated && !canAccessTab(activeUser, target)) {
+        target = 'pos';
+      }
+      setTabHistory(nextHistory);
+      setActiveTabState(target);
       return;
     }
-    setActiveTabState(tab);
+
+    if (activeTab !== 'dashboard') {
+      const fallback =
+        isAuthenticated && canAccessTab(activeUser, 'dashboard') ? 'dashboard' : 'pos';
+      setActiveTabState(fallback);
+    }
   };
+
+  // Sync browser/mobile hardware Back button with in-app navigation history
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const stateTab = event.state?.posTab;
+      if (typeof stateTab === 'string') {
+        if (isAuthenticated && !canAccessTab(activeUser, stateTab)) {
+          setActiveTabState('pos');
+        } else {
+          setTabHistory((prev) => prev.slice(0, -1));
+          setActiveTabState(stateTab);
+        }
+      } else {
+        setTabHistory((prev) => {
+          if (prev.length === 0) return prev;
+          const next = [...prev];
+          const prevTab = next.pop();
+          if (prevTab && (!isAuthenticated || canAccessTab(activeUser, prevTab))) {
+            setActiveTabState(prevTab);
+          }
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeUser, isAuthenticated]);
+
+  // Verify Firestore connectivity on boot cleanly without blocking offline operations
+  useEffect(() => {
+    void testFirestoreConnection();
+  }, []);
 
   // Enforce RBAC tab protection whenever activeUser or activeTab changes
   useEffect(() => {
@@ -323,6 +408,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(DBStorage.getAuditLogs());
   const [stockTransactions, setStockTransactions] = useState<StockTransaction[]>(
     DBStorage.getStockTransactions()
+  );
+  const [stockAdjustments, setStockAdjustments] = useState<StockAdjustmentRecord[]>(
+    DBStorage.getStockAdjustments()
   );
   const [returns, setReturns] = useState<SaleReturn[]>(DBStorage.getReturns());
   const [quotations, setQuotations] = useState<Quotation[]>(DBStorage.getQuotations());
@@ -374,6 +462,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCashSessions(DBStorage.getCashSessions());
     setAuditLogs(DBStorage.getAuditLogs());
     setStockTransactions(DBStorage.getStockTransactions());
+    setStockAdjustments(DBStorage.getStockAdjustments());
     setStockTransfers(DBStorage.getStockTransfers());
     setReturns(DBStorage.getReturns());
     setQuotations(DBStorage.getQuotations());
@@ -1821,6 +1910,198 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     applyStockMovement(variant_id, -Math.abs(qty), 'damage', reason || 'Damaged / Expired Write-off');
   };
 
+  // Comprehensive Personal Use & 9-Type Stock Adjustment (never creates a Sale or adds to Sales Income)
+  const recordStockAdjustment = (input: {
+    variant_id: string;
+    adjustment_type: StockAdjustmentType;
+    direction?: 'deduct' | 'add';
+    quantity: number;
+    date?: string;
+    reason: string;
+    note?: string;
+    taken_by?: string;
+  }): { success: boolean; record?: StockAdjustmentRecord; message?: string } => {
+    if (!hasPermission(activeUser, 'inventory_adjust')) {
+      addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked stock adjustment (${input.adjustment_type}) by ${activeUser.name}`);
+      return { success: false, message: 'Permission denied for stock adjustment.' };
+    }
+
+    const qty = Number(input.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return { success: false, message: 'Quantity must be greater than zero.' };
+    }
+
+    const direction: 'deduct' | 'add' =
+      input.adjustment_type === 'stock_correction' && input.direction === 'add' ? 'add' : 'deduct';
+
+    let targetProd: Product | undefined;
+    let targetVar: ProductVariant | undefined;
+    let targetProdIdx = -1;
+    let targetVarIdx = -1;
+
+    products.forEach((p, pIdx) => {
+      if (targetProd) return;
+      const vIdx = p.variants.findIndex((v) => v.id === input.variant_id);
+      if (vIdx !== -1) {
+        targetProd = p;
+        targetVar = p.variants[vIdx];
+        targetProdIdx = pIdx;
+        targetVarIdx = vIdx;
+      }
+    });
+
+    if (!targetProd || !targetVar || targetProdIdx === -1 || targetVarIdx === -1) {
+      return { success: false, message: 'Selected product or variant could not be found.' };
+    }
+
+    const availableBefore = targetVar.stock_quantity;
+    if (direction === 'deduct' && qty > availableBefore + 0.0001) {
+      return {
+        success: false,
+        message: `Insufficient stock (${availableBefore} available, requested ${qty}).`,
+      };
+    }
+
+    const now = new Date();
+    const dateStr = input.date || now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 8);
+    const newStock =
+      direction === 'add'
+        ? Math.round((availableBefore + qty) * 1000) / 1000
+        : Math.max(0, Math.round((availableBefore - qty) * 1000) / 1000);
+
+    // Update FEFO batches when deducting, if batch records exist
+    let updatedBatches: BatchLot[] | undefined = targetVar.batches
+      ? targetVar.batches.map((b) => ({ ...b }))
+      : undefined;
+    let resolvedBatchNo = targetVar.batch_number;
+
+    if (direction === 'deduct' && updatedBatches && updatedBatches.length > 0) {
+      let remaining = qty;
+      const sortedIndexes = updatedBatches
+        .map((b, idx) => ({ b, idx }))
+        .filter(({ b }) => b.stock_quantity > 0)
+        .sort((a, b) => (a.b.expiry_date || '9999-12-31').localeCompare(b.b.expiry_date || '9999-12-31'))
+        .map(({ idx }) => idx);
+
+      for (const idx of sortedIndexes) {
+        if (remaining <= 0.0001) break;
+        const take = Math.min(updatedBatches[idx].stock_quantity, remaining);
+        if (!resolvedBatchNo) resolvedBatchNo = updatedBatches[idx].batch_number;
+        updatedBatches[idx] = {
+          ...updatedBatches[idx],
+          stock_quantity: Math.max(0, Math.round((updatedBatches[idx].stock_quantity - take) * 1000) / 1000),
+        };
+        remaining = Math.round((remaining - take) * 1000) / 1000;
+      }
+    }
+
+    const nextActiveBatch =
+      updatedBatches
+        ?.filter((b) => b.stock_quantity > 0)
+        .sort((a, b) => (a.expiry_date || '9999-12-31').localeCompare(b.expiry_date || '9999-12-31'))[0] ||
+      updatedBatches?.[0];
+
+    const updatedProds = [...products];
+    const prodCopy = { ...targetProd, variants: [...targetProd.variants] };
+    prodCopy.variants[targetVarIdx] = {
+      ...targetVar,
+      stock_quantity: newStock,
+      batches: updatedBatches,
+      batch_number: nextActiveBatch?.batch_number ?? targetVar.batch_number,
+      expiry_date: nextActiveBatch?.expiry_date ?? targetVar.expiry_date,
+      updated_at: now.toISOString(),
+    };
+    updatedProds[targetProdIdx] = prodCopy;
+
+    setProducts(updatedProds);
+    DBStorage.saveProducts(updatedProds);
+
+    const isPersonalUse =
+      input.adjustment_type === 'owner_personal_use' ||
+      input.adjustment_type === 'staff_personal_use';
+    const prefix = isPersonalUse ? 'PU' : 'ADJ';
+    const refNo = `${prefix}-${dateStr.replace(/-/g, '')}-${(stockAdjustments.length + 1).toString().padStart(3, '0')}`;
+
+    const totalPurchaseValue = Math.round(qty * targetVar.purchase_price * 100) / 100;
+    const baseUnit = getVariantBaseUnit(targetVar);
+
+    const record: StockAdjustmentRecord = {
+      id: `adj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      reference_no: refNo,
+      product_id: targetProd.id,
+      product_name: targetProd.name,
+      variant_id: targetVar.id,
+      variant_name: targetVar.variant_name,
+      is_medicine: Boolean(targetProd.is_medicine),
+      adjustment_type: input.adjustment_type,
+      direction,
+      available_stock_before: availableBefore,
+      quantity: qty,
+      unit: baseUnit,
+      purchase_price: targetVar.purchase_price,
+      selling_price: targetVar.selling_price,
+      total_purchase_value: totalPurchaseValue,
+      date: dateStr,
+      time: timeStr,
+      reason: input.reason.trim() || input.adjustment_type.replace(/_/g, ' '),
+      note: input.note?.trim() || undefined,
+      taken_by: input.taken_by?.trim() || activeUser.name,
+      recorded_by: activeUser.name,
+      user_id: activeUser.id,
+      created_at: now.toISOString(),
+      branch_id: store.branch_id,
+    };
+
+    const nextAdjustments = [record, ...stockAdjustments];
+    setStockAdjustments(nextAdjustments);
+    DBStorage.saveStockAdjustments(nextAdjustments);
+
+    const txTypeMap: Record<StockAdjustmentType, StockTransaction['transaction_type']> = {
+      owner_personal_use: 'personal_use',
+      staff_personal_use: 'personal_use',
+      damaged_stock: 'damage',
+      expired_stock: 'expired',
+      wastage: 'wastage',
+      free_sample: 'stock_out',
+      promotional_use: 'stock_out',
+      stock_correction: 'adjustment',
+      missing_lost: 'damage',
+    };
+
+    const stockTx: StockTransaction = {
+      id: `st_${prefix.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      product_id: targetProd.id,
+      product_name: targetProd.name,
+      variant_id: targetVar.id,
+      variant_name: targetVar.variant_name,
+      transaction_type: txTypeMap[input.adjustment_type],
+      quantity_change: direction === 'add' ? qty : -qty,
+      previous_stock: availableBefore,
+      new_stock: newStock,
+      batch_number: resolvedBatchNo,
+      base_unit: baseUnit,
+      reference_no: refNo,
+      user_id: activeUser.id,
+      user_name: activeUser.name,
+      reason: `${input.adjustment_type.replace(/_/g, ' ').toUpperCase()} · ${record.reason} (Taken by: ${record.taken_by})`,
+      created_at: now.toISOString(),
+      branch_id: store.branch_id,
+    };
+
+    const updatedStockTxs = [stockTx, ...stockTransactions];
+    setStockTransactions(updatedStockTxs);
+    DBStorage.saveStockTransactions(updatedStockTxs);
+
+    addAuditLog(
+      isPersonalUse ? 'PERSONAL_USE_RECORDED' : 'STOCK_ADJUSTMENT_RECORDED',
+      'Inventory',
+      `${refNo}: ${targetProd.name} (${targetVar.variant_name}) ${direction === 'add' ? '+' : '-'}${qty} ${baseUnit} | Cost ৳${totalPurchaseValue} | By: ${record.taken_by} | Reason: ${record.reason}`
+    );
+
+    return { success: true, record };
+  };
+
   const recordStockTransfer = (data: {
     variant_id: string;
     quantity: number;
@@ -2043,10 +2324,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (a) => a.employee_id === data.employee_id && a.date === data.date
     );
     let updated: AttendanceRecord[];
+    const shiftText = emp.shift_label || emp.shift || 'Full Day';
     if (existingIdx !== -1) {
       updated = [...attendance];
       updated[existingIdx] = {
         ...updated[existingIdx],
+        employee_code: emp.employee_code,
+        shift: shiftText,
         status: data.status,
         check_in: data.check_in ?? updated[existingIdx].check_in,
         check_out: data.check_out ?? updated[existingIdx].check_out,
@@ -2058,7 +2342,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const rec: AttendanceRecord = {
         id: `att_${data.employee_id}_${data.date}`,
         employee_id: emp.id,
+        employee_code: emp.employee_code,
         employee_name: emp.name,
+        shift: shiftText,
         date: data.date,
         status: data.status,
         check_in: data.check_in,
@@ -2396,6 +2682,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       value={{
         activeTab,
         setActiveTab,
+        tabHistory,
+        canGoBack,
+        goBack,
         activeUser,
         setActiveUser,
         users,
@@ -2414,6 +2703,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cashSessions,
         auditLogs,
         stockTransactions,
+        stockAdjustments,
         returns,
         quotations,
         heldCarts,
@@ -2464,6 +2754,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         recordStockOut,
         recordDamageStock,
         recordStockTransfer,
+        recordStockAdjustment,
         addIncome,
         deleteIncome,
         addCashFlow,

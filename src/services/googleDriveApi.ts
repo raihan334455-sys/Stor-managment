@@ -208,6 +208,125 @@ export const uploadJsonToDrive = async (
   return await res.json();
 };
 
+export const LIVE_SYNC_FILENAME = 'SuperStore_POS_Latest.json';
+
+/**
+ * Find or prepare the live sync file inside SuperStore_POS_Backups folder
+ */
+export const findLiveSyncFileInPOSFolder = async (): Promise<{
+  folderId: string;
+  existingFile: DriveFileItem | null;
+}> => {
+  const folderId = await getOrCreatePOSFolder();
+  const files = await listDriveFiles({
+    folderId,
+    searchQuery: LIVE_SYNC_FILENAME,
+    pageSize: 20,
+  });
+  const existingFile =
+    files.find(
+      (f) => f.name === LIVE_SYNC_FILENAME && f.mimeType !== 'application/vnd.google-apps.folder'
+    ) || null;
+  return { folderId, existingFile };
+};
+
+/**
+ * Update (overwrite) an existing JSON file in Google Drive via PATCH
+ */
+export const updateJsonInDrive = async (
+  fileId: string,
+  jsonData: any,
+  fileName?: string
+): Promise<DriveFileItem> => {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Google Drive access token not available. Please sign in.');
+
+  const boundary = '-------314159265358979323846';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  const metadata: any = {
+    mimeType: 'application/json',
+  };
+  if (fileName) {
+    metadata.name = fileName;
+  }
+
+  const jsonString = typeof jsonData === 'string' ? jsonData : JSON.stringify(jsonData, null, 2);
+
+  const multipartRequestBody =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    'Content-Type: application/json\r\n\r\n' +
+    jsonString +
+    closeDelimiter;
+
+  const res = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(
+      fileId
+    )}?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime,webViewLink`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: multipartRequestBody,
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Failed to update file in Google Drive (${res.status})`);
+  }
+
+  return await res.json();
+};
+
+/**
+ * Update (or create) the live POS backup in Google Drive, with optional dated archive snapshot
+ */
+export const syncLatestBackupToDrive = async (
+  jsonData: any,
+  options?: {
+    existingFileId?: string;
+    folderId?: string;
+    alsoSaveTimestampedCopy?: boolean;
+  }
+): Promise<{
+  primaryFile: DriveFileItem;
+  archiveFile?: DriveFileItem;
+  action: 'updated' | 'created';
+}> => {
+  const targetFolderId = options?.folderId || (await getOrCreatePOSFolder());
+  let existingId = options?.existingFileId;
+  if (!existingId) {
+    const lookup = await findLiveSyncFileInPOSFolder();
+    existingId = lookup.existingFile?.id;
+  }
+
+  let primaryFile: DriveFileItem;
+  let action: 'updated' | 'created';
+  if (existingId) {
+    primaryFile = await updateJsonInDrive(existingId, jsonData, LIVE_SYNC_FILENAME);
+    action = 'updated';
+  } else {
+    primaryFile = await uploadJsonToDrive(LIVE_SYNC_FILENAME, jsonData, targetFolderId);
+    action = 'created';
+  }
+
+  let archiveFile: DriveFileItem | undefined;
+  if (options?.alsoSaveTimestampedCopy) {
+    const nowStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const archiveName = `superstore_pos_backup_${nowStr}.json`;
+    archiveFile = await uploadJsonToDrive(archiveName, jsonData, targetFolderId);
+  }
+
+  return { primaryFile, archiveFile, action };
+};
+
 /**
  * Upload an arbitrary file (blob) to Google Drive
  */

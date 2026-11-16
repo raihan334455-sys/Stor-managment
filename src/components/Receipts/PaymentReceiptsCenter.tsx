@@ -295,8 +295,101 @@ export const PaymentReceiptsCenter: React.FC = () => {
           </div>
         </div>
 
+        {/* Mobile Compact Cards */}
+        <div className="md:hidden space-y-2.5">
+          {filteredReceipts.map((row) => (
+            <div
+              key={row.id}
+              className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono font-bold text-xs text-[#5b46b5]">
+                      {row.receiptNo}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-700">
+                      {row.kind === 'sale'
+                        ? 'POS Sale'
+                        : row.kind === 'due'
+                        ? 'Customer Due'
+                        : 'Supplier Due'}
+                    </span>
+                  </div>
+                  <div className="font-bold text-sm text-slate-900 mt-0.5 truncate">
+                    {row.partyName}
+                  </div>
+                  {row.partyMobile && (
+                    <div className="text-[11px] font-mono text-slate-500">{row.partyMobile}</div>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-mono font-bold text-sm text-emerald-700 tabular-nums">
+                    {store.currency_symbol}
+                    {row.paidAmount.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-slate-400 uppercase">{row.method}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="font-mono text-slate-500">
+                  {row.date} {row.time}
+                </span>
+                {row.status === 'cleared' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold uppercase">
+                    <Sparkles className="w-3 h-3" />
+                    Due Cleared
+                  </span>
+                ) : row.status === 'paid' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold uppercase">
+                    Paid
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-bold uppercase">
+                    Due {store.currency_symbol}
+                    {row.currentDue.toLocaleString()}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setShareTarget(row.payload)}
+                  className="py-2 rounded-lg bg-[#ec1f73] hover:bg-[#d61665] text-white text-[11px] font-bold inline-flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Share</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadRow(row)}
+                  className="py-2 rounded-lg bg-[#5b46b5] hover:bg-[#4a379c] text-white text-[11px] font-bold inline-flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{downloadedId === row.id ? 'Saved!' : 'Save'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintableReceipt(row.payload)}
+                  className="py-2 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-semibold inline-flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>View</span>
+                </button>
+              </div>
+            </div>
+          ))}
+          {filteredReceipts.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              কোনো Payment Receipt পাওয়া যায়নি।
+            </div>
+          )}
+        </div>
+
         {/* Desktop Table */}
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+        <div className="hidden md:block overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase">

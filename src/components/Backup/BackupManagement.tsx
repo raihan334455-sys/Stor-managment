@@ -1,6 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DBStorage } from '../../db/storage';
+import { getAccessToken } from '../../services/googleDriveAuth';
+import { QuickDriveUpdateModal } from '../GoogleDrive/QuickDriveUpdateModal';
+import { FirestoreSyncCard } from '../CloudSync/FirestoreSyncCard';
 import {
   DatabaseBackup,
   Download,
@@ -20,7 +23,11 @@ import {
 } from 'lucide-react';
 import { DatabaseBackup as IDatabaseBackup } from '../../types';
 
-export const BackupManagement: React.FC = () => {
+interface BackupManagementProps {
+  embedded?: boolean;
+}
+
+export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = false }) => {
   const {
     products,
     customers,
@@ -42,23 +49,25 @@ export const BackupManagement: React.FC = () => {
 
   if (!checkPermission('backup_manage')) {
     return (
-      <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
-        <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
-          <ShieldAlert className="w-8 h-8" />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-            আপনার অ্যাকাউন্টে ব্যাকআপ ও রিস্টোর সেকশন দেখার অনুমতি নেই। কেবল অ্যাডমিন এই অপশন দেখতে পারবেন।
-          </p>
-        </div>
-        <div className="pt-2">
-          <button
-            onClick={() => setActiveTab('pos')}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
-          </button>
+      <div className="w-full min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="p-8 max-w-lg w-full text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
+          <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+              আপনার অ্যাকাউন্টে ব্যাকআপ ও রিস্টোর সেকশন দেখার অনুমতি নেই। কেবল অ্যাডমিন এই অপশন দেখতে পারবেন।
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => setActiveTab('pos')}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -71,8 +80,14 @@ export const BackupManagement: React.FC = () => {
   const [resetActionType, setResetActionType] = useState<'clear_history' | 'wipe_all' | 'reset_demo'>('clear_history');
   const [autoSnapshots, setAutoSnapshots] = useState(() => DBStorage.getAutoBackupSnapshots());
   const [confirmRestoreSnapId, setConfirmRestoreSnapId] = useState<string | null>(null);
+  const [showQuickDriveModal, setShowQuickDriveModal] = useState(false);
+  const [isDriveConnected, setIsDriveConnected] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    getAccessToken().then((t) => setIsDriveConnected(Boolean(t)));
+  }, [showQuickDriveModal]);
 
   // Storage usage calculation
   let totalBytesUsed = 0;
@@ -202,7 +217,8 @@ export const BackupManagement: React.FC = () => {
 
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6 max-w-5xl">
+    <div className={embedded ? 'w-full text-slate-800 space-y-6' : 'w-full min-h-screen bg-slate-50'}>
+      <div className={embedded ? 'space-y-6' : 'max-w-6xl mx-auto p-4 sm:p-6 text-slate-800 space-y-6'}>
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
@@ -262,33 +278,62 @@ export const BackupManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Google Drive Cloud Integration Banner */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 rounded-2xl p-5 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Firebase Firestore Cloud Sync */}
+      <FirestoreSyncCard
+        onSyncSuccess={(text) => {
+          setMessage({ type: 'success', text });
+          setTimeout(() => setMessage(null), 5000);
+        }}
+      />
+
+      {/* Google Drive Cloud Integration */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white shrink-0 shadow-inner">
-            <Cloud className="w-6 h-6 text-blue-200" />
+          <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+            <Cloud className="w-5 h-5" />
           </div>
           <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-sm tracking-tight text-white">Google Drive Cloud Synchronization</h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                Connected
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-bold text-sm tracking-tight text-slate-900">Google Drive Cloud Synchronization</h3>
+              <span
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
+                  isDriveConnected
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}
+              >
+                {isDriveConnected ? 'Connected' : 'Ready to Connect'}
               </span>
             </div>
-            <p className="text-xs text-blue-100">
+            <p className="text-xs text-slate-500">
               Sync database backups directly to your personal Google Drive and restore them from anywhere.
+              {store.last_drive_sync_at && (
+                <span className="block text-[11px] text-blue-600 font-mono mt-0.5">
+                  Last synced: {new Date(store.last_drive_sync_at).toLocaleString()}
+                </span>
+              )}
             </p>
           </div>
         </div>
 
-        <button
-          onClick={() => setActiveTab('drive')}
-          className="px-4 py-2.5 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all whitespace-nowrap cursor-pointer shrink-0"
-        >
-          <CloudUpload className="w-4 h-4" />
-          <span>Open Google Drive Sync</span>
-          <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowQuickDriveModal(true)}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer min-h-[40px]"
+          >
+            <CloudUpload className="w-4 h-4" />
+            <span>Update Google Drive</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('drive')}
+            className="px-3.5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer min-h-[40px]"
+          >
+            <span>Open Explorer</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Main Actions Grid */}
@@ -657,6 +702,20 @@ export const BackupManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {showQuickDriveModal && (
+        <QuickDriveUpdateModal
+          onClose={() => setShowQuickDriveModal(false)}
+          onSyncComplete={({ file, action }) => {
+            setMessage({
+              type: 'success',
+              text: `Google Drive ${action === 'updated' ? 'updated' : 'synced'} (${file.name}) successfully!`,
+            });
+            setTimeout(() => setMessage(null), 5000);
+          }}
+        />
+      )}
+      </div>
     </div>
   );
 };

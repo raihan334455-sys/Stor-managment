@@ -23,8 +23,12 @@ import {
   RotateCcw,
   AlertTriangle,
   ShoppingCart,
+  ShoppingBag,
+  Pill,
+  Layers,
 } from 'lucide-react';
-import { PermissionKey, StoreSettings, User } from '../../types';
+import { BusinessMode, PermissionKey, StoreSettings, User } from '../../types';
+import { getBusinessMode, withBusinessMode } from '../../utils/modules';
 
 type SettingsTab =
   | 'shop'
@@ -87,44 +91,68 @@ export const SettingsManagement: React.FC = () => {
 
   if (!checkPermission('settings_manage')) {
     return (
-      <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
-        <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
-          <ShieldAlert className="w-8 h-8" />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-            আপনার অ্যাকাউন্টে স্টোর সেটিংস দেখার বা পরিবর্তন করার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
-          </p>
-        </div>
-        <div className="pt-2">
-          <button
-            onClick={() => setActiveTab('pos')}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
-          </button>
+      <div className="w-full min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="p-8 max-w-lg w-full text-center bg-white border border-slate-200 rounded-2xl space-y-4">
+          <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+              আপনার অ্যাকাউন্টে স্টোর সেটিংস দেখার বা পরিবর্তন করার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => setActiveTab('pos')}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  const activeBusinessMode: BusinessMode = getBusinessMode(form);
+
+  const handleSwitchBusinessMode = (mode: BusinessMode) => {
+    const nextStore = withBusinessMode(store, mode);
+    setForm(nextStore);
+    updateStore(nextStore);
+    setSavedMsg(true);
+    setTimeout(() => setSavedMsg(false), 2500);
+  };
+
   const handleToggleModuleImmediate = (
     key: 'module_medicine_enabled' | 'module_general_product_enabled' | 'demo_mode_enabled',
     checked: boolean
   ) => {
-    const nextForm: StoreSettings = {
-      ...form,
-      [key]: checked,
-      updated_at: new Date().toISOString(),
-    };
-    setForm(nextForm);
-    updateStore({
+    let nextStore: StoreSettings = {
       ...store,
       [key]: checked,
       updated_at: new Date().toISOString(),
-    });
+    };
+    if (key === 'module_medicine_enabled' || key === 'module_general_product_enabled') {
+      const medOn =
+        key === 'module_medicine_enabled'
+          ? checked
+          : nextStore.module_medicine_enabled !== false;
+      const genOn =
+        key === 'module_general_product_enabled'
+          ? checked
+          : nextStore.module_general_product_enabled !== false;
+      const derivedMode: BusinessMode =
+        medOn && genOn ? 'super_shop' : medOn ? 'pharmacy' : 'general_shop';
+      nextStore = {
+        ...nextStore,
+        business_mode: derivedMode,
+      };
+    }
+    setForm(nextStore);
+    updateStore(nextStore);
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
   };
@@ -188,16 +216,17 @@ export const SettingsManagement: React.FC = () => {
   const selectedPermUser = users.find((u) => u.id === selectedPermUserId);
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-5 max-w-6xl">
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex items-center justify-between gap-3">
+    <div className="w-full min-h-screen bg-slate-50">
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 text-slate-800 space-y-5">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#5b46b5] text-white flex items-center justify-center shrink-0">
-            <Settings className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+            <Settings className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-lg font-extrabold text-slate-900">Store & System Settings</h1>
+            <h1 className="text-base sm:text-lg font-bold text-slate-900">Store & System Settings</h1>
             <p className="text-xs text-slate-500">
-              Shop Info & Logo, Modules ON/OFF, Invoice, Barcode, Printer, Tax/VAT, Payments, Permissions & Backup
+              Shop Business Mode, Logo, Invoice, Barcode, Printer, Tax/VAT, Payments, Permissions & Backup
             </p>
           </div>
         </div>
@@ -211,17 +240,17 @@ export const SettingsManagement: React.FC = () => {
       )}
 
       {actionSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm">
+        <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <span>{actionSuccess}</span>
         </div>
       )}
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-print">
+      <div className="flex flex-wrap items-center gap-1.5 pb-1 no-print">
         {[
-          { id: 'shop', label: 'Shop Info & Logo', icon: Store },
-          { id: 'modules', label: 'Module ON/OFF', icon: ToggleRight },
+          { id: 'shop', label: 'Shop Info & Mode', icon: Store },
+          { id: 'modules', label: 'Business Mode & ON/OFF', icon: ToggleRight },
           { id: 'invoice', label: 'Invoice Settings', icon: FileText },
           { id: 'barcode', label: 'Barcode Settings', icon: Barcode },
           { id: 'printer', label: 'Printer Settings', icon: Printer },
@@ -238,13 +267,13 @@ export const SettingsManagement: React.FC = () => {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id as SettingsTab)}
-              className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+              className={`px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold inline-flex items-center gap-1.5 leading-tight cursor-pointer transition-colors ${
                 active
-                  ? 'bg-[#5b46b5] text-white shadow-xs'
+                  ? 'bg-emerald-600 text-white'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{t.label}</span>
             </button>
           );
@@ -253,18 +282,90 @@ export const SettingsManagement: React.FC = () => {
 
       {/* FORM-DRIVEN SETTINGS TABS */}
       {['shop', 'modules', 'invoice', 'barcode', 'printer', 'tax', 'payments'].includes(tab) && (
-        <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-5">
+        <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 space-y-5">
           {tab === 'shop' && (
             <>
               <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-                Shop Information & Shop Logo
+                Shop Configuration & Business Type
               </h2>
+
+              {/* Business Type 3-Mode Selector */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">
+                      ব্যবসার ধরন (Shop Business Type)
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      মেনু ও ফিচার ব্যবসার ধরন অনুযায়ী সাজানো হবে। মোড পরিবর্তন করলে পুরনো কোনো ডেটা মুছবে না।
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800">
+                    Active:{' '}
+                    {activeBusinessMode === 'general_shop'
+                      ? 'General Product Shop'
+                      : activeBusinessMode === 'pharmacy'
+                      ? 'Pharmacy Shop'
+                      : 'Super Shop (Both)'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  {[
+                    {
+                      mode: 'general_shop' as BusinessMode,
+                      title: 'General Product Shop',
+                      subtitle: 'মুদি / জেনারেল স্টোর — শুধু সাধারণ পণ্য ও স্টক (ওষুধ ফিচার লুকানো)',
+                      icon: ShoppingBag,
+                    },
+                    {
+                      mode: 'pharmacy' as BusinessMode,
+                      title: 'Pharmacy Shop',
+                      subtitle: 'ফার্মেসি — ওষুধ, ব্যাচ, এক্সপায়ারি ও জেনেরিক (সাধারণ পণ্য লুকানো)',
+                      icon: Pill,
+                    },
+                    {
+                      mode: 'super_shop' as BusinessMode,
+                      title: 'Super Shop (Product + Medicine)',
+                      subtitle: 'সুপার শপ — সাধারণ পণ্য ও ওষুধ দুই মডিউল একসাথে ও আলাদা রিপোর্ট',
+                      icon: Layers,
+                    },
+                  ].map((opt) => {
+                    const ModeIcon = opt.icon;
+                    const selected = activeBusinessMode === opt.mode;
+                    return (
+                      <button
+                        key={opt.mode}
+                        type="button"
+                        onClick={() => handleSwitchBusinessMode(opt.mode)}
+                        className={`p-3 rounded-xl border text-left transition-colors cursor-pointer flex items-start gap-2.5 ${
+                          selected
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            selected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          <ModeIcon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 leading-tight">{opt.title}</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">{opt.subtitle}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
                 <div className="w-16 h-16 rounded-2xl bg-white border border-slate-300 overflow-hidden flex items-center justify-center shrink-0">
                   {form.store_logo ? (
                     <img src={form.store_logo} alt="Store Logo" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-[#201c56] text-white flex items-center justify-center font-bold text-2xl">
+                    <div className="w-full h-full bg-emerald-700 text-white flex items-center justify-center font-bold text-2xl">
                       {form.store_name?.charAt(0) || 'S'}
                     </div>
                   )}
@@ -273,7 +374,7 @@ export const SettingsManagement: React.FC = () => {
                   <span className="text-xs font-bold text-slate-800 block">Shop Logo Upload</span>
                   <p className="text-[11px] text-slate-500">Printed on header, sidebar, and thermal/PDF receipts.</p>
                   <div className="flex flex-wrap justify-center sm:justify-start gap-2 pt-1">
-                    <label className="px-3.5 py-1.5 bg-[#5b46b5] hover:bg-[#4b389b] text-white rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5">
+                    <label className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5">
                       <Upload className="w-3.5 h-3.5" />
                       <span>Upload Logo</span>
                       <input
@@ -400,13 +501,64 @@ export const SettingsManagement: React.FC = () => {
             <div className="space-y-4">
               <div className="border-b border-slate-100 pb-2">
                 <h2 className="text-sm font-bold text-slate-900">
-                  Module ON / OFF Switches
+                  Shop Business Mode & Module ON / OFF Switches
                 </h2>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  কোনো মডিউল বন্ধ (OFF) করলে সেই মডিউল সম্পর্কিত সকল মেনু, ক্যাটালগ, স্টক, রিপোর্ট ও অপশন একসাথে বন্ধ হয়ে যাবে।
+                  কোনো মডিউল বন্ধ (OFF) করলে বা ব্যবসার ধরন পরিবর্তন করলে সম্পর্কিত মেনু ও ফিল্ড স্বয়ংক্রিয়ভাবে লুকানো হবে — কোনো পূর্বের ডেটা ডিলিট হবে না।
                 </p>
               </div>
-              <div className="space-y-3 text-xs">
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                {[
+                  {
+                    mode: 'general_shop' as BusinessMode,
+                    title: 'General Product Shop',
+                    desc: 'Hides Medicine menu, Batch, Expiry, Generic & Company fields.',
+                    icon: ShoppingBag,
+                  },
+                  {
+                    mode: 'pharmacy' as BusinessMode,
+                    title: 'Pharmacy Shop',
+                    desc: 'Hides General Product catalog & keeps Pharmacy workflows.',
+                    icon: Pill,
+                  },
+                  {
+                    mode: 'super_shop' as BusinessMode,
+                    title: 'Super Shop (Both)',
+                    desc: 'Shows both General Products and Pharmacy Medicines cleanly.',
+                    icon: Layers,
+                  },
+                ].map((opt) => {
+                  const ModeIcon = opt.icon;
+                  const selected = activeBusinessMode === opt.mode;
+                  return (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      onClick={() => handleSwitchBusinessMode(opt.mode)}
+                      className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors flex items-start gap-2.5 ${
+                        selected
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          selected ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-500'
+                        }`}
+                      >
+                        <ModeIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-900 block">{opt.title}</span>
+                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">{opt.desc}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-3 text-xs pt-1">
                 <label className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
                   <div>
                     <span className="font-bold text-slate-900 block">Medicine Management Module (Pharmacy)</span>
@@ -416,7 +568,7 @@ export const SettingsManagement: React.FC = () => {
                     type="checkbox"
                     checked={form.module_medicine_enabled !== false}
                     onChange={(e) => handleToggleModuleImmediate('module_medicine_enabled', e.target.checked)}
-                    className="w-5 h-5 accent-[#5b46b5]"
+                    className="w-5 h-5 accent-emerald-600"
                   />
                 </label>
 
@@ -429,7 +581,7 @@ export const SettingsManagement: React.FC = () => {
                     type="checkbox"
                     checked={form.module_general_product_enabled !== false}
                     onChange={(e) => handleToggleModuleImmediate('module_general_product_enabled', e.target.checked)}
-                    className="w-5 h-5 accent-[#5b46b5]"
+                    className="w-5 h-5 accent-emerald-600"
                   />
                 </label>
 
@@ -442,7 +594,7 @@ export const SettingsManagement: React.FC = () => {
                     type="checkbox"
                     checked={form.demo_mode_enabled !== false}
                     onChange={(e) => handleToggleModuleImmediate('demo_mode_enabled', e.target.checked)}
-                    className="w-5 h-5 accent-[#5b46b5]"
+                    className="w-5 h-5 accent-emerald-600"
                   />
                 </label>
               </div>
@@ -511,7 +663,7 @@ export const SettingsManagement: React.FC = () => {
                       type="checkbox"
                       checked={Boolean((form as unknown as Record<string, unknown>)[opt.key])}
                       onChange={(e) => setForm({ ...form, [opt.key]: e.target.checked })}
-                      className="w-4 h-4 accent-[#5b46b5]"
+                      className="w-4 h-4 accent-emerald-600"
                     />
                   </label>
                 ))}
@@ -547,7 +699,7 @@ export const SettingsManagement: React.FC = () => {
                       type="checkbox"
                       checked={Boolean((form as unknown as Record<string, unknown>)[opt.key])}
                       onChange={(e) => setForm({ ...form, [opt.key]: e.target.checked })}
-                      className="w-4 h-4 accent-[#5b46b5]"
+                      className="w-4 h-4 accent-emerald-600"
                     />
                   </label>
                 ))}
@@ -593,7 +745,7 @@ export const SettingsManagement: React.FC = () => {
                   type="checkbox"
                   checked={Boolean(form.printer_auto_print)}
                   onChange={(e) => setForm({ ...form, printer_auto_print: e.target.checked })}
-                  className="w-4 h-4 accent-[#5b46b5]"
+                  className="w-4 h-4 accent-emerald-600"
                 />
               </label>
             </div>
@@ -613,7 +765,7 @@ export const SettingsManagement: React.FC = () => {
                   type="checkbox"
                   checked={Boolean(form.tax_enabled)}
                   onChange={(e) => setForm({ ...form, tax_enabled: e.target.checked })}
-                  className="w-4 h-4 accent-[#5b46b5]"
+                  className="w-4 h-4 accent-emerald-600"
                 />
               </label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -671,7 +823,7 @@ export const SettingsManagement: React.FC = () => {
                           },
                         })
                       }
-                      className="w-4 h-4 accent-[#5b46b5]"
+                      className="w-4 h-4 accent-emerald-600"
                     />
                   </label>
                 ))}
@@ -682,7 +834,7 @@ export const SettingsManagement: React.FC = () => {
           <div className="pt-3 border-t border-slate-100 flex justify-end">
             <button
               type="submit"
-              className="px-6 py-2.5 bg-[#ec1f73] hover:bg-[#d61665] text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 cursor-pointer"
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer transition-colors"
             >
               <Save className="w-4 h-4" />
               <span>Save Configuration</span>
@@ -740,7 +892,7 @@ export const SettingsManagement: React.FC = () => {
                         setPermDraft(permDraft.filter((p) => p !== perm));
                       }
                     }}
-                    className="w-4 h-4 accent-[#5b46b5]"
+                    className="w-4 h-4 accent-emerald-600"
                   />
                 </label>
               );
@@ -752,7 +904,7 @@ export const SettingsManagement: React.FC = () => {
               type="button"
               disabled={selectedPermUser?.role === 'admin'}
               onClick={() => void handleSavePermissions()}
-              className="px-5 py-2 bg-[#5b46b5] hover:bg-[#4b389b] disabled:opacity-40 text-white rounded-xl font-bold cursor-pointer"
+              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-xl font-bold cursor-pointer transition-colors"
             >
               {selectedPermUser?.role === 'admin' ? 'Admin Has Full Access' : 'Save User Permissions'}
             </button>
@@ -854,8 +1006,8 @@ export const SettingsManagement: React.FC = () => {
             </div>
           )}
 
-          <div className="-m-4 sm:-m-6">
-            <BackupManagement />
+          <div className="pt-2">
+            <BackupManagement embedded />
           </div>
         </div>
       )}
@@ -870,7 +1022,7 @@ export const SettingsManagement: React.FC = () => {
       {/* CONFIRMATION MODAL FOR ADMIN DATABASE ACTIONS */}
       {activeUser.role === 'admin' && confirmModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-800">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-slate-800">
             <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <span>{confirmModal.title}</span>
@@ -917,6 +1069,7 @@ export const SettingsManagement: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

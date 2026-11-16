@@ -11,6 +11,7 @@ import {
   Calendar,
   Clock,
   DollarSign,
+  AlertCircle,
 } from 'lucide-react';
 import { SaleReturn, PaymentMethodType, Sale } from '../../types';
 
@@ -28,19 +29,21 @@ export const ReturnsManagement: React.FC = () => {
     [variantId: string]: { selected: boolean; quantity: number; reason: string };
   }>({});
   const [refundMethod, setRefundMethod] = useState<PaymentMethodType>('cash');
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const handleSearchInvoice = (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
     const query = invoiceQuery.trim().toLowerCase();
     const found = sales.find(
       (s) => s.invoice_number.toLowerCase() === query || s.id.toLowerCase() === query
     );
     if (!found) {
-      alert('Invoice not found. Please verify the invoice number.');
+      setModalError('Invoice not found. Please verify the invoice number.');
       return;
     }
     if (found.status === 'voided') {
-      alert('This invoice has already been voided.');
+      setModalError('This invoice has already been voided.');
       return;
     }
     setMatchedSale(found);
@@ -109,9 +112,10 @@ export const ReturnsManagement: React.FC = () => {
       }));
 
     if (itemsToReturn.length === 0) {
-      alert('Please select at least one item to return.');
+      setModalError('Please select at least one item to return.');
       return;
     }
+    setModalError(null);
 
     const createdReturn = processReturn(
       matchedSale.invoice_number,
@@ -153,6 +157,7 @@ export const ReturnsManagement: React.FC = () => {
         </div>
         <button
           onClick={() => {
+            setModalError(null);
             setShowNewReturnModal(true);
             setMatchedSale(null);
             setInvoiceQuery('');
@@ -223,7 +228,62 @@ export const ReturnsManagement: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Compact Cards */}
+        <div className="md:hidden space-y-2.5">
+          {filteredReturns.map((ret) => (
+            <div
+              key={ret.id}
+              className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-xs text-blue-600">
+                      {ret.return_number}
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-500">
+                      ({ret.invoice_number})
+                    </span>
+                  </div>
+                  <div className="font-bold text-sm text-slate-900 mt-0.5 truncate">
+                    {ret.customer_name}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-mono font-bold text-sm text-rose-600 tabular-nums">
+                    {store.currency_symbol}
+                    {ret.total_refund.toLocaleString()}
+                  </div>
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-white text-slate-700 border border-slate-200">
+                    {ret.refund_method}
+                  </span>
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-600 line-clamp-2">
+                {ret.items.map((i) => `${i.product_name} (${i.quantity})`).join(', ')}
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/80 text-[11px]">
+                <span className="font-mono text-slate-500">
+                  {ret.date} {ret.time}
+                </span>
+                <button
+                  onClick={() => setSelectedReturnForView(ret)}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
+                >
+                  <Receipt className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Voucher</span>
+                </button>
+              </div>
+            </div>
+          ))}
+          {filteredReturns.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No returns processed yet.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 font-semibold">
@@ -249,7 +309,7 @@ export const ReturnsManagement: React.FC = () => {
                   <td className="p-3 text-slate-600">
                     {ret.items.map((i) => `${i.product_name} (${i.quantity})`).join(', ')}
                   </td>
-                  <td className="p-3 text-right font-mono font-bold text-rose-600">
+                  <td className="p-3 text-right font-mono font-bold text-rose-600 tabular-nums">
                     {store.currency_symbol}
                     {ret.total_refund.toLocaleString()}
                   </td>
@@ -297,6 +357,13 @@ export const ReturnsManagement: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {modalError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
 
             {/* Step 1: Search Invoice */}
             {!matchedSale ? (

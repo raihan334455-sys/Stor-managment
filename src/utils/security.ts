@@ -684,6 +684,10 @@ export const TAB_REQUIRED_PERMISSIONS: Record<string, PermissionKey | 'ADMIN_ONL
   medicine: 'product_manage',
   general_products: 'product_manage',
   inventory: 'pos_sale',
+  personal_use: 'inventory_adjust',
+  stock_adjustment: 'inventory_adjust',
+  damaged_stock: 'inventory_adjust',
+  barcode: 'product_manage',
   customers: 'customer_manage',
   customer_due: 'due_manage',
   receipts: 'pos_sale',
@@ -692,6 +696,7 @@ export const TAB_REQUIRED_PERMISSIONS: Record<string, PermissionKey | 'ADMIN_ONL
   cash: 'pos_sale',
   purchases: 'supplier_manage',
   suppliers: 'supplier_manage',
+  supplier_due: 'supplier_manage',
   expenses: 'expense_manage',
   accounts: 'expense_manage',
   employees: 'user_manage',
@@ -719,9 +724,13 @@ export function canAccessTab(user: User | null | undefined, tabId: string): bool
       'drive',
       'purchases',
       'suppliers',
+      'supplier_due',
       'expenses',
       'accounts',
       'employees',
+      'personal_use',
+      'stock_adjustment',
+      'damaged_stock',
     ];
     if (visitorBlocked.includes(tabId)) return false;
   }
