@@ -15,6 +15,12 @@ import {
   Clock,
   BadgeCheck,
   IdCard,
+  KeyRound,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  AlertCircle,
+  Lock,
 } from 'lucide-react';
 import {
   AttendanceStatus,
@@ -22,6 +28,8 @@ import {
   EmployeeShiftType,
   PaymentMethodType,
   SalaryPayment,
+  User,
+  UserRole,
 } from '../../types';
 
 type EmployeeSubTab = 'list' | 'shifts' | 'attendance' | 'salary' | 'roles';
@@ -87,18 +95,24 @@ export const EmployeeManagement: React.FC = () => {
     attendance,
     salaries,
     users,
+    activeUser,
+    loginWithPin,
+    saveUser,
     saveEmployee,
+    saveUnifiedStaff,
     markAttendance,
     payEmployeeSalary,
+    checkPermission,
   } = useApp();
 
+  const canManageUsers = checkPermission('user_manage');
   const [subTab, setSubTab] = useState<EmployeeSubTab>('list');
   const [search, setSearch] = useState('');
   const [shiftFilter, setShiftFilter] = useState<'all' | EmployeeShiftType>('all');
   const [toast, setToast] = useState<string | null>(null);
   const [idCardEmp, setIdCardEmp] = useState<Employee | null>(null);
 
-  // Add/Edit Employee modal
+  // Add/Edit Unified Staff (Employee + Salesman + POS User) modal
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [empCode, setEmpCode] = useState('');
@@ -116,6 +130,22 @@ export const EmployeeManagement: React.FC = () => {
   const [empShiftStart, setEmpShiftStart] = useState('09:00');
   const [empShiftEnd, setEmpShiftEnd] = useState('21:00');
   const [empActive, setEmpActive] = useState(true);
+
+  // Unified POS Login fields (App ID, Password/PIN, Role)
+  const [enablePosLogin, setEnablePosLogin] = useState(true);
+  const [staffUsername, setStaffUsername] = useState('');
+  const [usernameEditedManually, setUsernameEditedManually] = useState(false);
+  const [staffRole, setStaffRole] = useState<UserRole>('salesman');
+  const [staffPin, setStaffPin] = useState('');
+  const [showStaffPin, setShowStaffPin] = useState(true);
+  const [staffFormError, setStaffFormError] = useState('');
+  const [isSavingStaff, setIsSavingStaff] = useState(false);
+
+  // Quick Switch Staff modal
+  const [switchTargetUser, setSwitchTargetUser] = useState<User | null>(null);
+  const [switchPin, setSwitchPin] = useState('');
+  const [switchError, setSwitchError] = useState('');
+  const [isSwitching, setIsSwitching] = useState(false);
 
   // Attendance state
   const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
@@ -152,12 +182,26 @@ export const EmployeeManagement: React.FC = () => {
     });
   }, [employees, search, shiftFilter]);
 
+  const slugifyUsername = (val: string) =>
+    val
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9_.-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+  const getNextEmpCode = () => {
+    const used = new Set(employees.map((e) => e.employee_code.trim().toUpperCase()));
+    let seq = 1;
+    while (used.has(`EMP-${String(seq).padStart(3, '0')}`)) seq += 1;
+    return `EMP-${String(seq).padStart(3, '0')}`;
+  };
+
   const openAddEmployee = () => {
     setEditingEmp(null);
-    setEmpCode(`EMP-${(employees.length + 1).toString().padStart(3, '0')}`);
+    setEmpCode(getNextEmpCode());
     setEmpName('');
-    setEmpDesig('Sales Associate');
-    setEmpDept('Sales');
+    setEmpDesig('Salesman');
+    setEmpDept('Sales & POS');
     setEmpPhone('');
     setEmpEmail('');
     setEmpAddress('');
@@ -169,11 +213,19 @@ export const EmployeeManagement: React.FC = () => {
     setEmpShiftStart(SHIFT_PRESETS.full_day.start);
     setEmpShiftEnd(SHIFT_PRESETS.full_day.end);
     setEmpActive(true);
+    setEnablePosLogin(canManageUsers);
+    setStaffUsername('');
+    setUsernameEditedManually(false);
+    setStaffRole('salesman');
+    setStaffPin('');
+    setShowStaffPin(true);
+    setStaffFormError('');
     setShowEmpModal(true);
   };
 
   const openEditEmployee = (e: Employee) => {
     const meta = getEmpShiftMeta(e);
+    const linked = users.find((u) => u.id === e.linked_user_id);
     setEditingEmp(e);
     setEmpCode(e.employee_code);
     setEmpName(e.name);
@@ -190,7 +242,47 @@ export const EmployeeManagement: React.FC = () => {
     setEmpShiftStart(meta.start);
     setEmpShiftEnd(meta.end);
     setEmpActive(e.active);
+    setEnablePosLogin(Boolean(linked));
+    setStaffUsername(linked?.username || slugifyUsername(e.name));
+    setUsernameEditedManually(Boolean(linked));
+    setStaffRole(linked?.role || 'salesman');
+    setStaffPin('');
+    setShowStaffPin(false);
+    setStaffFormError('');
     setShowEmpModal(true);
+  };
+
+  const handleStaffNameChange = (val: string) => {
+    setEmpName(val);
+    setStaffFormError('');
+    if (!editingEmp && !usernameEditedManually) {
+      setStaffUsername(slugifyUsername(val));
+    }
+  };
+
+  const handleGenerateStaffPin = () => {
+    setStaffPin(Math.floor(1000 + Math.random() * 9000).toString());
+    setShowStaffPin(true);
+    setStaffFormError('');
+  };
+
+  const handleConfirmSwitchStaff = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!switchTargetUser || isSwitching) return;
+    setIsSwitching(true);
+    setSwitchError('');
+    try {
+      const res = await loginWithPin(switchTargetUser.username, switchPin);
+      if (res.success) {
+        setSwitchTargetUser(null);
+        setSwitchPin('');
+      } else {
+        setSwitchError(res.message || 'Invalid Password / PIN');
+        setSwitchPin('');
+      }
+    } finally {
+      setIsSwitching(false);
+    }
   };
 
   const handleQuickShiftChange = (emp: Employee, nextShift: EmployeeShiftType, customStart?: string, customEnd?: string) => {
@@ -208,34 +300,145 @@ export const EmployeeManagement: React.FC = () => {
     showNotice(`${emp.name} (${emp.employee_code}) → ${preset.label} (${start}–${end})`);
   };
 
-  const handleSaveEmployee = (ev: React.FormEvent) => {
+  const handleSaveEmployee = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    if (!empName.trim() || !empPhone.trim()) return;
-    const now = new Date().toISOString();
+    if (isSavingStaff) return;
+    setStaffFormError('');
+
+    const cleanName = empName.trim();
+    const cleanCode = empCode.trim() || getNextEmpCode();
+    if (!cleanName) {
+      setStaffFormError('অনুগ্রহ করে স্টাফ/সেলসম্যানের নাম লিখুন (Full Name is required).');
+      return;
+    }
+
+    const dupCode = employees.some(
+      (e) => e.employee_code.trim().toLowerCase() === cleanCode.toLowerCase() && e.id !== editingEmp?.id
+    );
+    if (dupCode) {
+      setStaffFormError(`Employee ID "${cleanCode}" ইতিমধ্যে ব্যবহার হয়েছে।`);
+      return;
+    }
+
+    const willHavePosLogin = enablePosLogin && canManageUsers;
+    const cleanUsername = (staffUsername.trim() || slugifyUsername(cleanName))
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    const cleanPin = staffPin.trim();
+    const targetLinkedUserId = empLinkedUser || editingEmp?.linked_user_id;
+
+    if (willHavePosLogin) {
+      if (!cleanUsername || cleanUsername.length < 2) {
+        setStaffFormError('কমপক্ষে ২ অক্ষরের App / Login ID দিন (App ID must be at least 2 characters).');
+        return;
+      }
+      const dupUser = users.some(
+        (u) => u.username.toLowerCase() === cleanUsername && u.id !== targetLinkedUserId
+      );
+      if (dupUser) {
+        setStaffFormError(`App ID "@${cleanUsername}" ইতিমধ্যে অন্য স্টাফের জন্য ব্যবহৃত হচ্ছে।`);
+        return;
+      }
+      if (!targetLinkedUserId && (!cleanPin || cleanPin.length < 4)) {
+        setStaffFormError('নতুন লগইনের জন্য কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড/পিন দিন (Minimum 4 characters).');
+        return;
+      }
+      if (targetLinkedUserId && cleanPin && cleanPin.length < 4) {
+        setStaffFormError('নতুন পাসওয়ার্ড দিলে কমপক্ষে ৪ অক্ষরের হতে হবে (Minimum 4 characters).');
+        return;
+      }
+      if (staffRole === 'admin' && cleanPin === '1234') {
+        setStaffFormError('নিরাপত্তার জন্য অ্যাডমিন পিন হিসেবে 1234 ব্যবহার করা যাবে না।');
+        return;
+      }
+    }
+
     const preset = SHIFT_PRESETS[empShift];
-    saveEmployee({
-      id: editingEmp?.id || `emp_${Date.now()}`,
-      employee_code: empCode.trim() || `EMP-${Date.now().toString().slice(-3)}`,
-      name: empName.trim(),
-      designation: empDesig.trim() || 'Staff',
-      department: empDept.trim() || undefined,
-      phone: empPhone.trim(),
-      email: empEmail.trim() || undefined,
-      address: empAddress.trim() || undefined,
-      nid_number: empNid.trim() || undefined,
-      joining_date: empJoining,
-      basic_salary: parseFloat(empSalary) || 0,
-      linked_user_id: empLinkedUser || undefined,
-      shift: empShift,
-      shift_label: preset.label,
-      shift_start: empShiftStart || preset.start,
-      shift_end: empShiftEnd || preset.end,
-      active: empActive,
-      created_at: editingEmp?.created_at || now,
-      updated_at: now,
-    });
-    setShowEmpModal(false);
-    showNotice(editingEmp ? 'Employee profile updated.' : 'New employee added.');
+    setIsSavingStaff(true);
+    try {
+      if (typeof saveUnifiedStaff === 'function') {
+        await saveUnifiedStaff({
+          employeeId: editingEmp?.id,
+          linkedUserId: targetLinkedUserId || undefined,
+          employeeCode: cleanCode,
+          name: cleanName,
+          designation: empDesig.trim() || 'Salesman',
+          department: empDept.trim() || 'Sales & POS',
+          phone: empPhone.trim(),
+          email: empEmail.trim() || undefined,
+          address: empAddress.trim() || undefined,
+          nidNumber: empNid.trim() || undefined,
+          joiningDate: empJoining,
+          basicSalary: parseFloat(empSalary) || 0,
+          shift: empShift,
+          shiftLabel: preset.label,
+          shiftStart: empShiftStart || preset.start,
+          shiftEnd: empShiftEnd || preset.end,
+          active: empActive,
+          enablePosLogin: willHavePosLogin,
+          username: cleanUsername,
+          role: staffRole,
+          plainPin: cleanPin || undefined,
+        });
+      } else {
+        const now = new Date().toISOString();
+        let nextLinkedId = targetLinkedUserId || undefined;
+        if (willHavePosLogin && typeof saveUser === 'function') {
+          const existingU = users.find((u) => u.id === targetLinkedUserId);
+          const uId = targetLinkedUserId || `user_${Date.now()}`;
+          await saveUser(
+            {
+              id: uId,
+              name: cleanName,
+              username: cleanUsername,
+              pin: existingU?.pin || cleanPin || '1234',
+              must_change_pin: existingU?.must_change_pin,
+              role: staffRole,
+              phone: empPhone.trim() || undefined,
+              email: empEmail.trim() || undefined,
+              active: empActive,
+              permissions: existingU?.permissions || [],
+              created_at: existingU?.created_at || now,
+              updated_at: now,
+              sync_status: 'pending',
+              branch_id: store.branch_id,
+              device_id: store.device_id,
+            },
+            cleanPin || undefined
+          );
+          nextLinkedId = uId;
+        }
+        saveEmployee({
+          id: editingEmp?.id || `emp_${Date.now()}`,
+          employee_code: cleanCode,
+          name: cleanName,
+          designation: empDesig.trim() || 'Salesman',
+          department: empDept.trim() || 'Sales & POS',
+          phone: empPhone.trim(),
+          email: empEmail.trim() || undefined,
+          address: empAddress.trim() || undefined,
+          nid_number: empNid.trim() || undefined,
+          joining_date: empJoining,
+          basic_salary: parseFloat(empSalary) || 0,
+          linked_user_id: nextLinkedId,
+          shift: empShift,
+          shift_label: preset.label,
+          shift_start: empShiftStart || preset.start,
+          shift_end: empShiftEnd || preset.end,
+          active: empActive,
+          created_at: editingEmp?.created_at || now,
+          updated_at: now,
+        });
+      }
+      setShowEmpModal(false);
+      showNotice(
+        editingEmp
+          ? `${cleanName} (${cleanCode}) প্রোফাইল আপডেট হয়েছে।`
+          : `${cleanName} (${cleanCode}) স্টাফ ও সেলসম্যান হিসেবে যুক্ত হয়েছে।`
+      );
+    } finally {
+      setIsSavingStaff(false);
+    }
   };
 
   const handlePaySalarySubmit = (e: React.FormEvent) => {
@@ -261,7 +464,7 @@ export const EmployeeManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-5">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-full w-full text-slate-800 space-y-5">
       {/* Header */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -269,9 +472,11 @@ export const EmployeeManagement: React.FC = () => {
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-lg font-extrabold text-slate-900">Employee Management</h1>
+            <h1 className="text-lg font-extrabold text-slate-900">
+              Staff, Employee &amp; Salesman Management
+            </h1>
             <p className="text-xs text-slate-500">
-              Add Employee, Staff Directory, Daily Attendance, Monthly Salary & User Role Management
+              একই প্রোফাইলে Employee ID, POS App ID, Shift, Attendance, Salary ও Role — Employee, Salesman ও Staff একসাথে পরিচালিত হয়
             </p>
           </div>
         </div>
@@ -281,7 +486,7 @@ export const EmployeeManagement: React.FC = () => {
           className="px-4 py-2 bg-[#ec1f73] hover:bg-[#d61665] text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>Add Employee</span>
+          <span>Add Staff / Salesman</span>
         </button>
       </div>
 
@@ -295,11 +500,11 @@ export const EmployeeManagement: React.FC = () => {
       {/* Sub-tabs */}
       <div className="flex flex-wrap items-center gap-1.5 pb-1 no-print">
         {[
-          { id: 'list', label: 'Employee List', icon: Users },
+          { id: 'list', label: 'All Staff & Salesmen', icon: Users },
           { id: 'shifts', label: 'Employee ID & Shifts', icon: Clock },
           { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
           { id: 'salary', label: 'Salary & Payroll', icon: Banknote },
-          { id: 'roles', label: 'User & Role Management', icon: ShieldCheck },
+          { id: 'roles', label: 'Login Access & Roles', icon: ShieldCheck },
         ].map((t) => {
           const Icon = t.icon;
           const active = subTab === t.id;
@@ -391,9 +596,13 @@ export const EmployeeManagement: React.FC = () => {
                         </span>
                       </div>
                       <div className="font-bold text-sm text-slate-900 mt-1 truncate">{emp.name}</div>
-                      <div className="text-[11px] text-slate-600">
-                        {emp.designation} · {emp.department || 'General'}
-                        {linkedUser ? ` · @${linkedUser.username}` : ''}
+                      <div className="text-[11px] text-slate-600 flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <span>{emp.designation} · {emp.department || 'General'}</span>
+                        {linkedUser && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono font-bold text-[10px]">
+                            App: @{linkedUser.username} ({linkedUser.role})
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -403,9 +612,23 @@ export const EmployeeManagement: React.FC = () => {
                       <div className="text-[10px] text-slate-400">Basic / mo</div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-[11px] text-slate-500">
-                    <span className="font-mono truncate">{emp.phone} · {emp.joining_date}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-[11px] text-slate-500">
+                    <span className="font-mono truncate">{emp.phone || 'No phone'} · {emp.joining_date}</span>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {linkedUser && linkedUser.active && linkedUser.id !== activeUser.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSwitchTargetUser(linkedUser);
+                            setSwitchPin('');
+                            setSwitchError('');
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <Lock className="w-3 h-3" />
+                          <span>Switch</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setIdCardEmp(emp)}
@@ -455,9 +678,23 @@ export const EmployeeManagement: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-2 px-3">
-                        <div className="font-bold text-slate-900">{emp.name}</div>
-                        {linkedUser && (
-                          <div className="text-[10px] font-mono text-emerald-700">POS: @{linkedUser.username}</div>
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <span>{emp.name}</span>
+                          {linkedUser?.id === activeUser.id && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold uppercase">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        {linkedUser ? (
+                          <div className="text-[10px] font-mono text-emerald-700 flex items-center gap-1 mt-0.5">
+                            <span>App ID: @{linkedUser.username}</span>
+                            <span className="px-1 py-0.2 rounded bg-slate-100 text-slate-600 capitalize font-sans font-semibold">
+                              {linkedUser.role}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-400">No POS Login</div>
                         )}
                       </td>
                       <td className="py-2 px-3">
@@ -474,7 +711,7 @@ export const EmployeeManagement: React.FC = () => {
                         <div className="text-[10px] text-slate-400">{emp.department || 'General'}</div>
                       </td>
                       <td className="py-2 px-3">
-                        <div className="font-mono text-slate-700">{emp.phone}</div>
+                        <div className="font-mono text-slate-700">{emp.phone || '—'}</div>
                         <div className="text-[10px] text-slate-400">{emp.joining_date}</div>
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 tabular-nums">
@@ -491,6 +728,21 @@ export const EmployeeManagement: React.FC = () => {
                       </td>
                       <td className="py-2 px-3 text-right">
                         <div className="inline-flex items-center gap-1.5">
+                          {linkedUser && linkedUser.active && linkedUser.id !== activeUser.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSwitchTargetUser(linkedUser);
+                                setSwitchPin('');
+                                setSwitchError('');
+                              }}
+                              title="Switch Active Staff (PIN)"
+                              className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white font-semibold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Lock className="w-3 h-3" />
+                              <span>Switch</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setIdCardEmp(emp)}
@@ -503,7 +755,7 @@ export const EmployeeManagement: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => openEditEmployee(emp)}
-                            title="Edit Employee"
+                            title="Edit Staff Profile, Shift & Login"
                             className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 cursor-pointer"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -1084,26 +1336,53 @@ export const EmployeeManagement: React.FC = () => {
         </div>
       )}
 
-      {/* ADD / EDIT EMPLOYEE MODAL */}
+      {/* ADD / EDIT UNIFIED STAFF / EMPLOYEE / SALESMAN MODAL */}
       {showEmpModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveEmployee} className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-3 text-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-sm font-bold text-slate-900">
-                {editingEmp ? 'Edit Employee Profile' : 'Add New Employee'}
-              </h3>
-              <button type="button" onClick={() => setShowEmpModal(false)} className="text-slate-400 cursor-pointer">
+          <form onSubmit={handleSaveEmployee} className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {editingEmp
+                    ? 'Edit Staff / Employee / Salesman Profile'
+                    : 'Add New Staff / Employee / Salesman'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Employee, Salesman ও Staff একই প্রোফাইল — এখান থেকেই ID, Shift, বেতন ও POS Login সেট করুন।
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowEmpModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {staffFormError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{staffFormError}</span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Employee ID (কোড)</label>
-                <input type="text" value={empCode} onChange={(e) => setEmpCode(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-[#5b46b5]" />
+                <label className="block font-semibold text-slate-700 mb-1">Employee ID (কোড) *</label>
+                <input
+                  type="text"
+                  value={empCode}
+                  onChange={(e) => setEmpCode(e.target.value)}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-[#5b46b5]"
+                />
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Full Name *</label>
-                <input type="text" required value={empName} onChange={(e) => setEmpName(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2" />
+                <label className="block font-semibold text-slate-700 mb-1">Full Name (নাম) *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Md. Karim (Salesman)"
+                  value={empName}
+                  onChange={(e) => handleStaffNameChange(e.target.value)}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2"
+                />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Duty Shift (শিফট)</label>
@@ -1135,16 +1414,16 @@ export const EmployeeManagement: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Designation *</label>
-                <input type="text" required value={empDesig} onChange={(e) => setEmpDesig(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2" />
+                <label className="block font-semibold text-slate-700 mb-1">Designation (পদবি) *</label>
+                <input type="text" required value={empDesig} onChange={(e) => setEmpDesig(e.target.value)} placeholder="Salesman / Cashier / Manager" className="w-full border border-slate-300 rounded-xl px-3 py-2" />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Department</label>
                 <input type="text" value={empDept} onChange={(e) => setEmpDept(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2" />
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Phone *</label>
-                <input type="text" required value={empPhone} onChange={(e) => setEmpPhone(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2 font-mono" />
+                <label className="block font-semibold text-slate-700 mb-1">Phone (মোবাইল)</label>
+                <input type="text" value={empPhone} onChange={(e) => setEmpPhone(e.target.value)} placeholder="017XXXXXXXX" className="w-full border border-slate-300 rounded-xl px-3 py-2 font-mono" />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Email</label>
@@ -1163,30 +1442,174 @@ export const EmployeeManagement: React.FC = () => {
                 <input type="text" value={empNid} onChange={(e) => setEmpNid(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2 font-mono" />
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Linked POS User (Optional)</label>
-                <select value={empLinkedUser} onChange={(e) => setEmpLinkedUser(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2">
-                  <option value="">None</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name} (@{u.username})</option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2">
                 <label className="block font-semibold text-slate-700 mb-1">Address</label>
                 <input type="text" value={empAddress} onChange={(e) => setEmpAddress(e.target.value)} className="w-full border border-slate-300 rounded-xl px-3 py-2" />
               </div>
-              <label className="sm:col-span-2 flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2 cursor-pointer">
-                <span className="font-semibold text-slate-700">Employee Active Status</span>
-                <input type="checkbox" checked={empActive} onChange={(e) => setEmpActive(e.target.checked)} className="w-4 h-4 accent-[#5b46b5]" />
-              </label>
             </div>
+
+            {/* Unified POS Login Access Section (App ID, Password/PIN, Role) */}
+            {canManageUsers && (
+              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="w-4 h-4 text-blue-600 shrink-0" />
+                    <div>
+                      <div className="font-bold text-blue-950">POS Login Access (App ID &amp; Password/PIN)</div>
+                      <div className="text-[10px] text-blue-700">
+                        টার্মিনাল লগইন ও Switch Active Staff-এ ব্যবহারের জন্য App ID এবং পিন সেট করুন।
+                      </div>
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={enablePosLogin}
+                      disabled={
+                        editingEmp?.linked_user_id === 'user_admin' ||
+                        editingEmp?.linked_user_id === activeUser.id ||
+                        (Boolean(editingEmp?.linked_user_id) &&
+                          users.find((u) => u.id === editingEmp?.linked_user_id)?.role === 'admin' &&
+                          users.filter((u) => u.role === 'admin' && u.active).length <= 1)
+                      }
+                      onChange={(e) => setEnablePosLogin(e.target.checked)}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    <span className="font-bold text-blue-900">Enable Login</span>
+                  </label>
+                </div>
+
+                {enablePosLogin && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                    <div>
+                      <label className="block font-bold text-blue-900 mb-1">App ID (Login ID) *</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2 text-blue-500 font-mono font-bold">@</span>
+                        <input
+                          type="text"
+                          required={enablePosLogin}
+                          placeholder="e.g. karim01"
+                          value={staffUsername}
+                          onChange={(e) => {
+                            setUsernameEditedManually(true);
+                            setStaffUsername(e.target.value.toLowerCase().replace(/\s+/g, '_'));
+                            setStaffFormError('');
+                          }}
+                          className="w-full bg-white border border-blue-200 rounded-xl pl-6 pr-2.5 py-2 font-mono font-bold text-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-blue-900">Password / PIN</label>
+                        <button
+                          type="button"
+                          onClick={handleGenerateStaffPin}
+                          className="text-[10px] font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>Auto PIN</span>
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showStaffPin ? 'text' : 'password'}
+                          maxLength={24}
+                          placeholder={editingEmp?.linked_user_id ? 'Blank = keep current' : 'Min 4 chars'}
+                          value={staffPin}
+                          onChange={(e) => {
+                            setStaffPin(e.target.value);
+                            setStaffFormError('');
+                          }}
+                          className="w-full bg-white border border-blue-200 rounded-xl pl-3 pr-8 py-2 font-mono font-bold text-slate-900"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowStaffPin(!showStaffPin)}
+                          className="absolute right-2 top-2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        >
+                          {showStaffPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-blue-900 mb-1">Access Role *</label>
+                      <select
+                        value={staffRole}
+                        disabled={
+                          editingEmp?.linked_user_id === 'user_admin' ||
+                          editingEmp?.linked_user_id === activeUser.id
+                        }
+                        onChange={(e) => setStaffRole(e.target.value as UserRole)}
+                        className="w-full bg-white border border-blue-200 rounded-xl px-2.5 py-2 font-semibold text-slate-800"
+                      >
+                        <option value="salesman">Salesman (সেলসম্যান)</option>
+                        <option value="cashier">Cashier (ক্যাশিয়ার)</option>
+                        <option value="stock_manager">Stock Manager</option>
+                        <option value="manager">Store Manager (ম্যানেজার)</option>
+                        <option value="admin">Admin / Owner</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <label className="flex items-center justify-between border border-slate-200 rounded-xl px-3 py-2 cursor-pointer">
+              <span className="font-semibold text-slate-700">Active Status (সক্রিয় স্টাফ ও লগইন)</span>
+              <input type="checkbox" checked={empActive} onChange={(e) => setEmpActive(e.target.checked)} className="w-4 h-4 accent-[#5b46b5]" />
+            </label>
+
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button type="button" onClick={() => setShowEmpModal(false)} className="px-4 py-2 border border-slate-200 rounded-xl font-semibold cursor-pointer">Cancel</button>
-              <button type="submit" className="px-4 py-2 bg-[#ec1f73] text-white rounded-xl font-bold cursor-pointer">
-                {editingEmp ? 'Update Employee' : 'Save Employee'}
+              <button type="submit" disabled={isSavingStaff} className="px-5 py-2 bg-[#ec1f73] hover:bg-[#d61665] disabled:opacity-50 text-white rounded-xl font-bold cursor-pointer">
+                {isSavingStaff ? 'Saving...' : editingEmp ? 'Update Staff Profile' : 'Save Staff & Salesman'}
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* QUICK SWITCH STAFF (PIN) MODAL */}
+      {switchTargetUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-emerald-600" />
+                <span>Switch Active Staff</span>
+              </h3>
+              <button type="button" onClick={() => setSwitchTargetUser(null)} className="text-slate-400 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-slate-600">
+              Enter Password / PIN for <strong>{switchTargetUser.name}</strong> (@{switchTargetUser.username}):
+            </p>
+            {switchError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+                {switchError}
+              </div>
+            )}
+            <form onSubmit={handleConfirmSwitchStaff} className="space-y-3">
+              <input
+                type="password"
+                autoFocus
+                required
+                value={switchPin}
+                onChange={(e) => setSwitchPin(e.target.value)}
+                placeholder="Enter Password / PIN"
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-center font-mono text-base tracking-widest focus:outline-none focus:border-emerald-500"
+              />
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setSwitchTargetUser(null)} className="px-4 py-2 border border-slate-200 rounded-xl font-semibold cursor-pointer">Cancel</button>
+                <button type="submit" disabled={isSwitching} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold cursor-pointer">
+                  {isSwitching ? 'Verifying...' : 'Confirm Switch'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

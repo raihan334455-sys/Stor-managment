@@ -824,6 +824,30 @@ export interface Employee {
   updated_at: string;
 }
 
+export interface UnifiedStaffInput {
+  employeeId?: string;
+  linkedUserId?: string;
+  employeeCode: string;
+  name: string;
+  designation: string;
+  department?: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  nidNumber?: string;
+  joiningDate: string;
+  basicSalary: number;
+  shift: EmployeeShiftType;
+  shiftLabel?: string;
+  shiftStart: string;
+  shiftEnd: string;
+  active: boolean;
+  enablePosLogin: boolean;
+  username?: string;
+  role?: UserRole;
+  plainPin?: string;
+}
+
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'half_day' | 'leave';
 
 export interface AttendanceRecord {

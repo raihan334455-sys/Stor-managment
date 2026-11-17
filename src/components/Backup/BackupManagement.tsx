@@ -49,7 +49,7 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
 
   if (!checkPermission('backup_manage')) {
     return (
-      <div className="w-full min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="w-full min-h-full bg-slate-50 flex items-center justify-center p-4">
         <div className="p-8 max-w-lg w-full text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
           <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
             <ShieldAlert className="w-8 h-8" />
@@ -217,8 +217,8 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
 
 
   return (
-    <div className={embedded ? 'w-full text-slate-800 space-y-6' : 'w-full min-h-screen bg-slate-50'}>
-      <div className={embedded ? 'space-y-6' : 'max-w-6xl mx-auto p-4 sm:p-6 text-slate-800 space-y-6'}>
+    <div className={embedded ? 'w-full text-slate-800 space-y-6' : 'w-full min-h-full bg-slate-50'}>
+      <div className={embedded ? 'space-y-6' : 'w-full p-4 sm:p-6 text-slate-800 space-y-6'}>
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
@@ -226,7 +226,7 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
           <span>Database Backup, Disaster Recovery & Restore</span>
         </h1>
         <p className="text-xs text-slate-500">
-          Export full store data to offline JSON files, restore from previous snapshots, or reset to demo seeds.
+          Export full store data to offline JSON files, restore from previous snapshots, or run a clean factory reset.
         </p>
       </div>
 
@@ -583,15 +583,15 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
             </button>
           </div>
 
-          {/* Card 3: Demo Seeds Reset */}
+          {/* Card 3: Factory Clean Reset */}
           <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3 flex flex-col justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
                 <RefreshCw className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>ডেমো ডেটায় রিসেট</span>
+                <span>ফ্যাক্টরি ক্লিন রিসেট</span>
               </div>
               <p className="text-[11px] text-blue-800 leading-relaxed">
-                স্টোর ডাটাবেসকে সফটওয়্যারের প্রাথমিক ডেমো পণ্যে (চিনি, সয়াবিন তেল, আটা, চাল, মশলা) ফিরিয়ে নিয়ে যাবে।
+                সমস্ত ডেটা ও অ্যাকাউন্ট মুছে সফটওয়্যারটিকে একদম নতুন ফ্রেশ অবস্থায় (Owner Setup) ফিরিয়ে নিয়ে যাবে।
               </p>
             </div>
             <button
@@ -604,7 +604,7 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
               className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Reset to Demo Data</span>
+              <span>Factory Clean Reset</span>
             </button>
           </div>
         </div>
@@ -622,7 +622,7 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
                   ? 'বিক্রয় ও বাকি হিস্ট্রি মুছে ফেলা নিশ্চিত করুন'
                   : resetActionType === 'wipe_all'
                   ? 'সম্পূর্ণ স্টোর ডেটা ওয়াইপ নিশ্চিত করুন'
-                  : 'ডেমো ডেটায় রিসেট নিশ্চিত করুন'}
+                  : 'ফ্যাক্টরি ক্লিন রিসেট নিশ্চিত করুন'}
               </span>
             </div>
 
@@ -631,7 +631,7 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
                 ? 'এটি আপনার সমস্ত বিক্রয় রেকর্ড, কাস্টমার বাকি লেজার, খরচ ও ক্যাশ সেশন মুছে দেবে। পণ্যের ক্যাটালগ অক্ষত থাকবে।'
                 : resetActionType === 'wipe_all'
                 ? 'এটি পণ্য তালিকা, স্টক, বিক্রয়, বাকি এবং কাস্টমার সহ সমস্ত ডেটা চিরতরে মুছে ফেলবে।'
-                : 'এটি বর্তমান পরিবর্তন মুছে সফটওয়্যারের মূল ডেমো ডেটায় স্টোরকে নিয়ে যাবে।'}
+                : 'এটি সমস্ত লোকাল ডেটা মুছে নতুন করে Owner অ্যাকাউন্ট সেটআপের জন্য ফ্রেশ অবস্থায় নিয়ে যাবে।'}
             </p>
 
             <div className="space-y-1 bg-slate-50 p-3 rounded-xl border border-slate-200">
@@ -687,7 +687,7 @@ export const BackupManagement: React.FC<BackupManagementProps> = ({ embedded = f
                     resetToDemoData();
                     setMessage({
                       type: 'success',
-                      text: 'ডাটাবেস সফলভাবে ডেমো ডেটায় রিসেট হয়েছে।',
+                      text: 'স্টোর সম্পূর্ণ ফ্রেশ অবস্থায় রিসেট হয়েছে।',
                     });
                   }
                   setShowResetConfirm(false);

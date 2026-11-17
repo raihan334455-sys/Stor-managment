@@ -126,43 +126,6 @@ interface BulkRowDraft {
   supplier_id: string;
 }
 
-interface PresetPhoto {
-  name: string;
-  category: string;
-  url: string;
-}
-
-const GROCERY_PRESETS: PresetPhoto[] = [
-  { name: 'Tablets / Medicine Blister Pack', category: 'Medicine', url: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Capsules & Vitamins', category: 'Medicine', url: 'https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Liquid Syrup Bottle', category: 'Medicine', url: 'https://images.unsplash.com/photo-1631549916768-4119b2e5f926?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Injection Vial & Ampoule', category: 'Medicine', url: 'https://images.unsplash.com/photo-1579154204601-01588f351e67?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Nazirshail / Miniket Rice (চাল)', category: 'Rice & Grains', url: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Basmati Rice', category: 'Rice & Grains', url: 'https://images.unsplash.com/photo-1536304993881-ff6e9eefa2a6?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Soybean Oil (সয়াবিন তেল)', category: 'Cooking Oils', url: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Mustard Oil (সরিষার তেল)', category: 'Cooking Oils', url: 'https://images.unsplash.com/photo-1620706857370-e1b9770e8bb1?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Ghee / Pure Butter (ঘি)', category: 'Cooking Oils', url: 'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Fresh Milk / Dairy (দুধ)', category: 'Dairy', url: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Powder Milk (Dano/Diploma)', category: 'Dairy', url: 'https://images.unsplash.com/photo-1528750997573-59b89d56f4f7?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Turmeric Powder (হলুদ গুঁড়া)', category: 'Spices', url: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Red Chili Powder (মরিচ গুঁড়া)', category: 'Spices', url: 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Cumin & Spices (জিরা/ধনিয়া)', category: 'Spices', url: 'https://images.unsplash.com/photo-1509358271058-acd22cc93898?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Masoor Dal (মসুর ডাল)', category: 'Lentils', url: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Chickpeas / Chola (ছোলা)', category: 'Lentils', url: 'https://images.unsplash.com/photo-1515543237350-b3eea1ec8082?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Wheat Flour / Atta (আটা/ময়দা)', category: 'Flour', url: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Crystal White Sugar (চিনি)', category: 'Loose Goods', url: 'https://images.unsplash.com/photo-1581441363689-1f3c3c414635?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Pure Iodized Salt (লবণ)', category: 'Loose Goods', url: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Black Tea Leaves (চা পাতা)', category: 'Beverages', url: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Coca-Cola / Soda Can (পানীয়)', category: 'Beverages', url: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Mango / Fruit Juice (জুস)', category: 'Beverages', url: 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Tea Biscuits & Cookies (বিস্কুট)', category: 'Snacks & Bakery', url: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Potato Chips & Snacks (চিপস)', category: 'Snacks & Bakery', url: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Bath Soap (Lux/Lifebuoy সাবান)', category: 'Personal Care', url: 'https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Hair Care Shampoo (শ্যাম্পু)', category: 'Personal Care', url: 'https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Fresh Farm Eggs (ডিম)', category: 'Produce', url: 'https://images.unsplash.com/photo-1516467508483-a7212febe31a?w=400&auto=format&fit=crop&q=80' },
-  { name: 'Red Onions & Garlic (পেঁয়াজ/রসুন)', category: 'Produce', url: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=400&auto=format&fit=crop&q=80' },
-];
-
 const UNIT_OPTIONS: UnitType[] = [
   'Strip',
   'Piece',
@@ -240,10 +203,9 @@ export const ProductManagement: React.FC = () => {
   const [newCatName, setNewCatName] = useState<string>('');
   const [newCatCode, setNewCatCode] = useState<string>('');
 
-  // Online Picture Search & Download System State
+  // Online Picture Download System State
   const [showOnlineImageModal, setShowOnlineImageModal] = useState<boolean>(false);
   const [onlineImageUrl, setOnlineImageUrl] = useState<string>('');
-  const [onlineSearchQuery, setOnlineSearchQuery] = useState<string>('');
   const [isDownloadingImage, setIsDownloadingImage] = useState<boolean>(false);
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<string>('');
 
@@ -1151,7 +1113,7 @@ export const ProductManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-full w-full text-slate-800 space-y-6">
       {/* Page Title & Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -2670,19 +2632,16 @@ export const ProductManagement: React.FC = () => {
 
                       <button
                         type="button"
-                        onClick={() => {
-                          setOnlineSearchQuery(prodName.split(' ')[0] || (isMedicineMode ? 'Medicine' : ''));
-                          setShowOnlineImageModal(true);
-                        }}
+                        onClick={() => setShowOnlineImageModal(true)}
                         className="px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                       >
                         <Globe className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Online Download & Presets</span>
+                        <span>Download from Image URL</span>
                       </button>
                     </div>
 
                     <p className="text-[11px] text-slate-500">
-                      ফোন/কম্পিউটার থেকে ছবি আপলোড করুন অথবা অনলাইন লাইব্রেরি থেকে ওষুধ/পণ্যের ছবি নিন।
+                      ফোন/কম্পিউটার থেকে ছবি আপলোড করুন অথবা অনলাইন ইমেজ লিঙ্ক দিয়ে ডাউনলোড করুন।
                     </p>
                   </div>
                 </div>
@@ -3518,20 +3477,20 @@ export const ProductManagement: React.FC = () => {
         </div>
       )}
 
-      {/* ONLINE IMAGE SEARCH & DOWNLOAD MODAL */}
+      {/* ONLINE IMAGE URL DOWNLOAD MODAL */}
       {showOnlineImageModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-2xl w-full text-slate-800 shadow-2xl max-h-[90vh] flex flex-col">
+          <div className="pos-modal-enter bg-white border border-slate-200 rounded-2xl p-6 max-w-lg w-full text-slate-800 shadow-2xl max-h-[90vh] flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2">
                 <Globe className="w-5 h-5 text-blue-600" />
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">
-                    Online Product Image Library & URL Downloader
+                    Online Product Image URL Downloader
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Select a curated product photo or paste any web image URL to download & save locally.
+                    Paste any web image URL to download &amp; save locally.
                   </p>
                 </div>
               </div>
@@ -3579,72 +3538,6 @@ export const ProductManagement: React.FC = () => {
                     )}
                     <span>Download</span>
                   </button>
-                </div>
-              </div>
-
-              {/* Option 2: Curated Grocery Presets with Search */}
-              <div className="space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Instant Grocery Photo Presets (১-ক্লিক সিলেক্ট)</span>
-                  </label>
-                  <div className="relative w-full sm:w-56">
-                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={onlineSearchQuery}
-                      onChange={(e) => setOnlineSearchQuery(e.target.value)}
-                      placeholder="Search items (Rice, Oil, Milk...)"
-                      className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Preset Photo Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto p-1">
-                  {GROCERY_PRESETS.filter((item) => {
-                    const q = onlineSearchQuery.toLowerCase().trim();
-                    return !q || item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q);
-                  }).map((item, idx) => {
-                    const isSelected = prodImage === item.url;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleDownloadOnlineImage(item.url)}
-                        className={`group p-2 rounded-xl border text-left flex flex-col justify-between transition-all bg-white shadow-xs relative ${
-                          isSelected
-                            ? 'border-blue-600 ring-2 ring-blue-500/30'
-                            : 'border-slate-200 hover:border-blue-400 hover:shadow-md'
-                        }`}
-                      >
-                        <div className="w-full h-20 rounded-lg overflow-hidden bg-slate-100 mb-2 relative">
-                          <img
-                            src={item.url}
-                            alt={item.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            loading="lazy"
-                          />
-                          {isSelected && (
-                            <div className="absolute inset-0 bg-blue-600/30 flex items-center justify-center">
-                              <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow">
-                                <Check className="w-3.5 h-3.5" />
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">
-                            {item.category}
-                          </div>
-                          <div className="text-xs font-bold text-slate-800 line-clamp-1">
-                            {item.name}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
             </div>

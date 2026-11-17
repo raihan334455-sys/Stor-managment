@@ -91,7 +91,7 @@ export const SettingsManagement: React.FC = () => {
 
   if (!checkPermission('settings_manage')) {
     return (
-      <div className="w-full min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="w-full min-h-full bg-slate-50 flex items-center justify-center p-4">
         <div className="p-8 max-w-lg w-full text-center bg-white border border-slate-200 rounded-2xl space-y-4">
           <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
             <ShieldAlert className="w-8 h-8" />
@@ -195,7 +195,7 @@ export const SettingsManagement: React.FC = () => {
       setActionSuccess('সম্পূর্ণ ডেটা মুছে স্টোর একদম নতুন অবস্থায় সেট করা হয়েছে। All store data wiped clean for fresh start.');
     } else if (confirmModal.type === 'reset_demo') {
       await resetToDemoData();
-      setActionSuccess('স্টোর সফলভাবে ডেমো ডেটায় রিসেট হয়েছে। Database reset to default demo seeds.');
+      setActionSuccess('স্টোর সফলভাবে ফ্রেশ রিসেট হয়েছে। Database reset to clean initial state.');
     }
 
     setConfirmModal(null);
@@ -216,8 +216,8 @@ export const SettingsManagement: React.FC = () => {
   const selectedPermUser = users.find((u) => u.id === selectedPermUserId);
 
   return (
-    <div className="w-full min-h-screen bg-slate-50">
-      <div className="max-w-6xl mx-auto p-4 sm:p-6 text-slate-800 space-y-5">
+    <div className="w-full min-h-full bg-slate-50">
+      <div className="w-full p-4 sm:p-6 text-slate-800 space-y-5">
       <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
@@ -585,18 +585,20 @@ export const SettingsManagement: React.FC = () => {
                   />
                 </label>
 
-                <label className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
-                  <div>
-                    <span className="font-bold text-slate-900 block">Public Demo Visitor Account (demo / 1234)</span>
-                    <span className="text-slate-500">Disable Demo Login for production security on live shop terminals.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={form.demo_mode_enabled !== false}
-                    onChange={(e) => handleToggleModuleImmediate('demo_mode_enabled', e.target.checked)}
-                    className="w-5 h-5 accent-emerald-600"
-                  />
-                </label>
+                {users.some((u) => u.role === 'visitor') && (
+                  <label className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                    <div>
+                      <span className="font-bold text-slate-900 block">Public Demo Visitor Account</span>
+                      <span className="text-slate-500">Disable Demo Login for production security on live shop terminals.</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={form.demo_mode_enabled !== false}
+                      onChange={(e) => handleToggleModuleImmediate('demo_mode_enabled', e.target.checked)}
+                      className="w-5 h-5 accent-emerald-600"
+                    />
+                  </label>
+                )}
               </div>
             </div>
           )}
@@ -980,10 +982,10 @@ export const SettingsManagement: React.FC = () => {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
                       <RotateCcw className="w-4 h-4 text-blue-600" />
-                      <span>Reset to Demo Seed Data</span>
+                      <span>Factory Clean Reset</span>
                     </div>
                     <p className="text-[11px] text-blue-800">
-                      Restores factory sample products, categories, suppliers, and demo records.
+                      Clears all local data & accounts to restart fresh Owner setup from scratch.
                     </p>
                   </div>
                   <button
@@ -991,15 +993,15 @@ export const SettingsManagement: React.FC = () => {
                     onClick={() => {
                       setConfirmModal({
                         type: 'reset_demo',
-                        title: 'Reset to Demo Seed Data',
-                        description: 'Replaces current database with default demo dataset.',
-                        keyword: 'DEMO',
+                        title: 'Factory Clean Reset',
+                        description: 'Clears all local store records and restarts fresh Owner setup.',
+                        keyword: 'RESET',
                       });
                       setConfirmInput('');
                     }}
                     className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg cursor-pointer"
                   >
-                    Reset Demo Data
+                    Factory Reset
                   </button>
                 </div>
               </div>

@@ -46,7 +46,7 @@ import {
   INITIAL_SALES,
   INITIAL_EXPENSES,
   INITIAL_RECURRING_EXPENSES,
-  INITIAL_CASH_SESSION,
+  INITIAL_CASH_SESSIONS,
   INITIAL_AUDIT_LOGS,
   INITIAL_STOCK_TRANSACTIONS,
   INITIAL_BRANDS,
@@ -191,22 +191,7 @@ async function normalizeAndHashUsers(rawUsers: User[]): Promise<{ users: User[];
   const migrated: User[] = [];
 
   for (const u of rawUsers) {
-    let next = { ...u };
-
-    if (next.id === 'user_demo' || next.username === 'demo') {
-      next = {
-        ...next,
-        role: 'visitor',
-        permissions: getPermissionsForRole('visitor'),
-      };
-    } else if (next.id === 'user_admin' || next.username === 'admin' || (next.name && next.name.includes('Rafiqul'))) {
-      next = {
-        ...next,
-        name: 'Md. Raihan (Owner)',
-        role: 'admin',
-        permissions: getPermissionsForRole('admin'),
-      };
-    }
+    const next = { ...u };
 
     if (!Array.isArray(next.permissions) || next.permissions.length === 0) {
       next.permissions = getPermissionsForRole(next.role);
@@ -215,9 +200,6 @@ async function normalizeAndHashUsers(rawUsers: User[]): Promise<{ users: User[];
 
     if (!isHashedPin(next.pin)) {
       const rawPin = String(next.pin || '1234');
-      if (next.id === 'user_admin' && rawPin === '1234') {
-        next.must_change_pin = true;
-      }
       next.pin = await hashPin(rawPin);
       changed = true;
     }
@@ -270,7 +252,7 @@ export class DBStorage {
       hydrateKey(KEYS.EMPLOYEES, INITIAL_EMPLOYEES),
       hydrateKey(KEYS.ATTENDANCE, [] as AttendanceRecord[]),
       hydrateKey(KEYS.SALARIES, [] as SalaryPayment[]),
-      hydrateKey(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]),
+      hydrateKey(KEYS.CASH_SESSIONS, INITIAL_CASH_SESSIONS),
       hydrateKey(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS),
       hydrateKey(KEYS.STOCK_TRANSACTIONS, INITIAL_STOCK_TRANSACTIONS),
       hydrateKey(KEYS.STOCK_ADJUSTMENTS, [] as StockAdjustmentRecord[]),
@@ -279,6 +261,113 @@ export class DBStorage {
       hydrateKey(KEYS.QUOTATIONS, [] as Quotation[]),
       hydrateKey(KEYS.BACKUP_HISTORY, [] as { id: string; timestamp: string; trigger: string; data: DatabaseBackup }[]),
     ]);
+
+    // One-time cleanup of all legacy hardcoded demo records if cached from earlier versions
+    const SEED_CLEANUP_FLAG = 'pos_removed_all_seed_data_v2';
+    let seedCleanupDone = false;
+    try {
+      seedCleanupDone = localStorage.getItem(SEED_CLEANUP_FLAG) === '1';
+    } catch {
+      seedCleanupDone = false;
+    }
+
+    if (!seedCleanupDone) {
+      const stripSeedByIds = async <T extends { id: string }>(key: string, legacyIds: string[]) => {
+        const set = new Set(legacyIds);
+        const existing = getItem<T[]>(key, []);
+        const cleaned = existing.filter((item) => !set.has(item.id));
+        if (cleaned.length !== existing.length) {
+          memoryCache.set(key, cleaned);
+          await persistEncryptedKey(key, cleaned);
+        }
+      };
+
+      await Promise.all([
+        stripSeedByIds<Product>(KEYS.PRODUCTS, [
+          'prod_nazirshail',
+          'prod_mustard_oil',
+          'prod_cocacola',
+          'prod_sugar',
+          'prod_radhuni_turmeric',
+          'prod_aarong_milk',
+        ]),
+        stripSeedByIds<Employee>(KEYS.EMPLOYEES, [
+          'emp_admin',
+          'emp_tanvir',
+          'emp_shafiq',
+          'emp_user_admin',
+          'emp_user_cashier1',
+          'emp_user_manager',
+        ]),
+        stripSeedByIds<User>(KEYS.USERS, ['user_demo', 'user_cashier1', 'user_manager']),
+        stripSeedByIds<Customer>(KEYS.CUSTOMERS, ['cust_rahim', 'cust_karim', 'cust_salma']),
+        stripSeedByIds<CustomerDueTransaction>(KEYS.CUSTOMER_DUES, ['cdt_01', 'cdt_02']),
+        stripSeedByIds<Supplier>(KEYS.SUPPLIERS, ['sup_01', 'sup_02', 'sup_03']),
+        stripSeedByIds<SupplierDueTransaction>(KEYS.SUPPLIER_DUES, ['sdt_01', 'sdt_02']),
+        stripSeedByIds<Purchase>(KEYS.PURCHASES, ['pur_01']),
+        stripSeedByIds<Sale>(KEYS.SALES, ['sale_01', 'sale_02']),
+        stripSeedByIds<Expense>(KEYS.EXPENSES, ['exp_01', 'exp_02', 'exp_03']),
+        stripSeedByIds<RecurringExpense>(KEYS.RECURRING_EXPENSES, ['rec_01', 'rec_02']),
+        stripSeedByIds<StockTransaction>(KEYS.STOCK_TRANSACTIONS, ['st_01', 'st_02']),
+        stripSeedByIds<AuditLog>(KEYS.AUDIT_LOGS, ['audit_01', 'audit_02']),
+        stripSeedByIds<CashSession>(KEYS.CASH_SESSIONS, ['cs_today']),
+        stripSeedByIds<FinancialAccount>(KEYS.FINANCIAL_ACCOUNTS, [
+          'acc_dbbl_main',
+          'acc_bkash_merchant',
+          'acc_nagad_merchant',
+        ]),
+        stripSeedByIds<Brand>(KEYS.BRANDS, [
+          'brand_rupchanda',
+          'brand_teer',
+          'brand_radhuni',
+          'brand_fresh',
+          'brand_pran',
+          'brand_square',
+        ]),
+        stripSeedByIds<GenericItem>(KEYS.GENERICS, [
+          'gen_paracetamol',
+          'gen_omeprazole',
+          'gen_esomeprazole',
+          'gen_azithromycin',
+          'gen_cefixime',
+          'gen_fexofenadine',
+        ]),
+        stripSeedByIds<PharmaCompany>(KEYS.PHARMA_COMPANIES, [
+          'comp_square',
+          'comp_beximco',
+          'comp_incepta',
+          'comp_aci',
+          'comp_renata',
+        ]),
+        stripSeedByIds<Category>(KEYS.CATEGORIES, [
+          'cat_rice',
+          'cat_oil',
+          'cat_spices',
+          'cat_beverages',
+          'cat_dairy',
+          'cat_snacks',
+          'cat_personal',
+          'cat_loose',
+        ]),
+      ]);
+
+      try {
+        const legacyUserIds = new Set(['user_demo', 'user_cashier1', 'user_manager']);
+        const rawSaved = localStorage.getItem('pos_saved_login_accounts');
+        if (rawSaved) {
+          const parsedSaved = JSON.parse(rawSaved);
+          if (Array.isArray(parsedSaved)) {
+            const filteredSaved = parsedSaved.filter(
+              (acc: { userId?: string }) => !acc?.userId || !legacyUserIds.has(acc.userId)
+            );
+            localStorage.setItem('pos_saved_login_accounts', JSON.stringify(filteredSaved));
+          }
+        }
+        localStorage.setItem(SEED_CLEANUP_FLAG, '1');
+      } catch {
+        // ignore storage errors
+      }
+    }
 
     // Ensure all stored users have PBKDF2-SHA256 PIN hashes & valid directory MAC
     const currentUsers = getItem<User[]>(KEYS.USERS, INITIAL_USERS);
@@ -311,12 +400,8 @@ export class DBStorage {
         ...(s.enabled_payment_methods || {}),
       },
     };
-    if (next.seller_name && next.seller_name.includes('Rafiqul')) {
-      next.seller_name = 'Md. Raihan (Owner)';
-      updated = true;
-    }
     if (next.demo_mode_enabled === undefined) {
-      next.demo_mode_enabled = true;
+      next.demo_mode_enabled = false;
       updated = true;
     }
     if (next.module_medicine_enabled === undefined) {
@@ -394,22 +479,7 @@ export class DBStorage {
 
   // Products
   static getProducts(): Product[] {
-    const list = getItem<Product[]>(KEYS.PRODUCTS, INITIAL_PRODUCTS);
-    let updated = false;
-    const result = list.map((p) => {
-      if (!p.image) {
-        const init = INITIAL_PRODUCTS.find((ip) => ip.id === p.id);
-        if (init?.image) {
-          updated = true;
-          return { ...p, image: init.image };
-        }
-      }
-      return p;
-    });
-    if (updated) {
-      setItem(KEYS.PRODUCTS, result);
-    }
-    return result;
+    return getItem<Product[]>(KEYS.PRODUCTS, INITIAL_PRODUCTS);
   }
 
   static saveProducts(products: Product[]): void {
@@ -463,13 +533,7 @@ export class DBStorage {
 
   // Sales
   static getSales(): Sale[] {
-    const sList = getItem(KEYS.SALES, INITIAL_SALES);
-    return sList.map((s) => {
-      if (s.seller_name && s.seller_name.includes('Rafiqul')) {
-        return { ...s, seller_name: 'Md. Raihan (Owner)' };
-      }
-      return s;
-    });
+    return getItem(KEYS.SALES, INITIAL_SALES);
   }
 
   static saveSales(sales: Sale[]): void {
@@ -514,18 +578,7 @@ export class DBStorage {
 
   // Cash Sessions
   static getCashSessions(): CashSession[] {
-    const sessions = getItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
-    return sessions.map((cs) => {
-      const updated = { ...cs };
-      if (updated.cashier_name && updated.cashier_name.includes('Rafiqul')) {
-        updated.cashier_name = 'Md. Raihan (Owner)';
-      }
-      if (updated.id === 'cs_today' && updated.opening_cash === 5000) {
-        updated.opening_cash = 0;
-        updated.expected_closing_cash = 0;
-      }
-      return updated;
-    });
+    return getItem(KEYS.CASH_SESSIONS, INITIAL_CASH_SESSIONS);
   }
 
   static saveCashSessions(sessions: CashSession[]): void {
@@ -543,13 +596,7 @@ export class DBStorage {
 
   // Audit Logs
   static getAuditLogs(): AuditLog[] {
-    const logs = getItem(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
-    return logs.map((l) => {
-      if (l.user_name && l.user_name.includes('Rafiqul')) {
-        return { ...l, user_name: 'Md. Raihan (Owner)' };
-      }
-      return l;
-    });
+    return getItem(KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
   }
 
   static saveAuditLogs(logs: AuditLog[]): void {
@@ -789,12 +836,19 @@ export class DBStorage {
     }
   }
 
-  // Reset to Factory Demo Seeds (preserves brute-force lockout counters)
+  // Reset to Clean Fresh Empty Database (preserves brute-force lockout counters)
   static async resetToSeedData(): Promise<void> {
     Object.values(KEYS).forEach((k) => {
       localStorage.removeItem(k);
       memoryCache.delete(k);
     });
+    try {
+      localStorage.removeItem('pos_saved_login_accounts');
+      localStorage.removeItem('pos_remembered_login_id');
+      localStorage.removeItem('pos_signed_session');
+    } catch {
+      // ignore
+    }
     storageInitialized = false;
     await this.initAsync();
   }
@@ -817,7 +871,7 @@ export class DBStorage {
     setItem(KEYS.ATTENDANCE, []);
     setItem(KEYS.SALARIES, []);
     setItem(KEYS.QUOTATIONS, []);
-    setItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
+    setItem(KEYS.CASH_SESSIONS, INITIAL_CASH_SESSIONS);
 
     const customers = this.getCustomers().map((c) => ({
       ...c,
@@ -851,11 +905,11 @@ export class DBStorage {
 
   // Wipe All Data (Fresh Empty Store Start)
   static wipeAllData(userId: string = 'admin', userName: string = 'Admin'): void {
-    const adminUser = this.getUsers().find((u) => u.role === 'admin') || INITIAL_USERS[1];
+    const adminUser = this.getUsers().find((u) => u.role === 'admin');
     const store = this.getStore();
 
     setItem(KEYS.PRODUCTS, []);
-    setItem(KEYS.CATEGORIES, []);
+    setItem(KEYS.CATEGORIES, INITIAL_CATEGORIES);
     setItem(KEYS.BRANDS, []);
     setItem(KEYS.GENERICS, []);
     setItem(KEYS.PHARMA_COMPANIES, []);
@@ -880,8 +934,8 @@ export class DBStorage {
     setItem(KEYS.ATTENDANCE, []);
     setItem(KEYS.SALARIES, []);
     setItem(KEYS.QUOTATIONS, []);
-    setItem(KEYS.CASH_SESSIONS, [INITIAL_CASH_SESSION]);
-    this.saveUsers([adminUser]);
+    setItem(KEYS.CASH_SESSIONS, INITIAL_CASH_SESSIONS);
+    this.saveUsers(adminUser ? [adminUser] : []);
 
     const newLog: AuditLog = {
       id: `audit_wipe_${Date.now()}`,

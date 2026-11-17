@@ -218,12 +218,12 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       },
       {
         id: 'staff_group',
-        groupLabelEn: 'Staff & Users',
-        groupLabelBn: 'কর্মচারী ও ইউজার',
+        groupLabelEn: 'Staff, Employees & Salesman',
+        groupLabelBn: 'স্টাফ, কর্মচারী ও সেলসম্যান',
         groupIcon: Briefcase,
         items: [
-          { id: 'employees', labelEn: 'Employees & Salary', labelBn: 'কর্মচারী ও বেতন', icon: Briefcase },
-          { id: 'users', labelEn: 'Users & Roles', labelBn: 'ইউজার ও রোল', icon: ShieldAlert },
+          { id: 'employees', labelEn: 'Staff, Employees & Salary', labelBn: 'স্টাফ, কর্মচারী ও বেতন', icon: Briefcase },
+          { id: 'users', labelEn: 'Salesman Login & Roles', labelBn: 'সেলসম্যান লগইন ও রোল', icon: ShieldAlert },
         ],
       },
       {

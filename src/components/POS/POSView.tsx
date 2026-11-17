@@ -1122,7 +1122,7 @@ export const POSView: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col xl:flex-row xl:h-full min-h-[540px] bg-slate-50 xl:overflow-hidden select-none text-slate-800 relative max-w-[1440px] mx-auto w-full">
+    <div className="flex flex-col xl:flex-row xl:h-full min-h-full bg-slate-50 xl:overflow-hidden select-none text-slate-800 relative w-full">
       {/* LEFT / CENTER: PRODUCT & VARIANT CATALOG GRID */}
       <div className="flex-1 flex flex-col p-3 sm:p-4 xl:overflow-hidden xl:border-r border-slate-200 min-w-0">
         {/* Top Filter Bar */}

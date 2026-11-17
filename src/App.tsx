@@ -88,7 +88,7 @@ const DashboardView: React.FC = () => {
   const totalCustomerDue = customers.reduce((sum, c) => sum + (c.total_due_amount || 0), 0);
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-full w-full text-slate-800 space-y-6">
       {/* Top Banner & Quick Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -529,7 +529,7 @@ const SalesHistoryView: React.FC = () => {
 
       {voidTarget && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+          <div className="pos-modal-enter bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-rose-600" />
               <span>Void Invoice #{voidTarget.invoice_number}?</span>
@@ -646,24 +646,26 @@ const AppContent: React.FC = () => {
   const renderTabContent = () => {
     if (!canAccessTab(activeUser, activeTab)) {
       return (
-        <div className="p-6 sm:p-8 max-w-lg mx-auto my-10 sm:my-16 text-center bg-white border border-slate-200 rounded-2xl space-y-4">
-          <div className="w-14 h-14 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
-            <ShieldAlert className="w-7 h-7" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="text-base sm:text-lg font-bold text-slate-900">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-              আপনার বর্তমান রোলে ({activeUser.role}) এই মডিউলটি দেখার অনুমতি নেই। কেবল অনুমোদিত ইউজার এই ডেটা পরিচালনা করতে পারবেন।
-            </p>
-          </div>
-          <div className="pt-1">
-            <button
-              onClick={() => setActiveTab('pos')}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl inline-flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <ShoppingCart className="w-4 h-4" />
-              <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
-            </button>
+        <div className="min-h-full w-full bg-slate-50 flex items-center justify-center p-4 sm:p-6">
+          <div className="p-6 sm:p-8 max-w-lg w-full text-center bg-white border border-slate-200 rounded-2xl space-y-4">
+            <div className="w-14 h-14 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                আপনার বর্তমান রোলে ({activeUser.role}) এই মডিউলটি দেখার অনুমতি নেই। কেবল অনুমোদিত ইউজার এই ডেটা পরিচালনা করতে পারবেন।
+              </p>
+            </div>
+            <div className="pt-1">
+              <button
+                onClick={() => setActiveTab('pos')}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl inline-flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -677,26 +679,28 @@ const AppContent: React.FC = () => {
       case 'products':
         if (!medEnabled && !genEnabled) {
           return (
-            <div className="p-6 sm:p-8 max-w-lg mx-auto my-10 sm:my-16 text-center bg-white border border-slate-200 rounded-2xl space-y-4">
-              <div className="w-14 h-14 bg-slate-100 text-slate-500 rounded-xl flex items-center justify-center mx-auto">
-                <Package className="w-7 h-7" />
+            <div className="min-h-full w-full bg-slate-50 flex items-center justify-center p-4 sm:p-6">
+              <div className="p-6 sm:p-8 max-w-lg w-full text-center bg-white border border-slate-200 rounded-2xl space-y-4">
+                <div className="w-14 h-14 bg-slate-100 text-slate-500 rounded-xl flex items-center justify-center mx-auto">
+                  <Package className="w-7 h-7" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900">Product & Medicine Modules Closed</h2>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                    Medicine Management এবং General Product Management উভয় মডিউল বর্তমানে বন্ধ (OFF) আছে। চালু করতে Store Settings &gt; Module ON/OFF ব্যবহার করুন।
+                  </p>
+                </div>
+                {canAccessTab(activeUser, 'settings') && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('settings')}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span>Open Module ON/OFF Settings</span>
+                  </button>
+                )}
               </div>
-              <div className="space-y-1">
-                <h2 className="text-base sm:text-lg font-bold text-slate-900">Product & Medicine Modules Closed</h2>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  Medicine Management এবং General Product Management উভয় মডিউল বর্তমানে বন্ধ (OFF) আছে। চালু করতে Store Settings &gt; Module ON/OFF ব্যবহার করুন।
-                </p>
-              </div>
-              {canAccessTab(activeUser, 'settings') && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('settings')}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span>Open Module ON/OFF Settings</span>
-                </button>
-              )}
             </div>
           );
         }
@@ -778,7 +782,14 @@ const AppContent: React.FC = () => {
             activeTab === 'pos' ? 'pb-20 xl:pb-0' : 'pb-20 md:pb-6'
           }`}
         >
-          {renderTabContent()}
+          <div
+            key={activeTab}
+            className={`pos-page-enter w-full bg-slate-50 ${
+              activeTab === 'pos' ? 'min-h-full xl:h-full' : 'min-h-full'
+            }`}
+          >
+            {renderTabContent()}
+          </div>
         </main>
       </div>
 

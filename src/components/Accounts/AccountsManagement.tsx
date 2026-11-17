@@ -221,7 +221,7 @@ export const AccountsManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-5">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-full w-full text-slate-800 space-y-5">
       {/* Header */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">

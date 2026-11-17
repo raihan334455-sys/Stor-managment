@@ -1,25 +1,67 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Eye,
   EyeOff,
   Delete,
   AlertCircle,
-  Sparkles,
   Grid3X3,
-  ShieldCheck,
   Store,
   Check,
-  KeyRound,
+  X,
   UserCheck,
-  ChevronRight,
-  Copy,
+  Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
+import {
+  SavedLoginAccount,
+  findLinkedEmployee,
+  getSavedLoginAccounts,
+  removeSavedLoginAccount,
+} from '../../utils/savedLogins';
 
 const REMEMBER_KEY = 'pos_remembered_login_id';
 
+const AVATAR_TONES = [
+  'bg-blue-100 text-blue-700',
+  'bg-indigo-100 text-indigo-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-amber-100 text-amber-800',
+  'bg-rose-100 text-rose-700',
+  'bg-slate-200 text-slate-700',
+];
+
+function getAvatarTone(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return AVATAR_TONES[hash % AVATAR_TONES.length];
+}
+
+function getRoleDisplay(role: string): string {
+  switch (role) {
+    case 'admin':
+      return 'Owner';
+    case 'manager':
+      return 'Manager';
+    case 'cashier':
+      return 'Salesman';
+    case 'visitor':
+      return 'Demo';
+    default:
+      return role;
+  }
+}
+
 export const LoginScreen: React.FC = () => {
-  const { store, users, loginWithPin } = useApp();
+  const { store, users, employees, loginWithPin, setupOwnerAccount } = useApp();
+
+  const needsInitialOwnerSetup = users.length === 0;
+  const primaryOwner = useMemo(
+    () => users.find((u) => u.role === 'admin' && u.active) || users.find((u) => u.role === 'admin'),
+    [users]
+  );
 
   const isDemoAvailable =
     store.demo_mode_enabled !== false &&
@@ -35,14 +77,61 @@ export const LoginScreen: React.FC = () => {
   const [showPin, setShowPin] = useState<boolean>(false);
   const [rememberMe, setRememberMe] = useState<boolean>(Boolean(savedId));
   const [showForgotHelp, setShowForgotHelp] = useState<boolean>(false);
-  const [showMobileKeypad, setShowMobileKeypad] = useState<boolean>(false);
+  const [showKeypad, setShowKeypad] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
-  const [copiedDemo, setCopiedDemo] = useState<boolean>(false);
-  const [focusedField, setFocusedField] = useState<'id' | 'pass' | null>('id');
 
+  // First-time owner setup state (when no users exist in storage)
+  const [setupStoreName, setSetupStoreName] = useState<string>(store.store_name || '');
+  const [setupOwnerName, setSetupOwnerName] = useState<string>('');
+  const [setupAppId, setSetupAppId] = useState<string>('');
+  const [setupPin, setSetupPin] = useState<string>('');
+
+  const [savedAccounts, setSavedAccounts] = useState<SavedLoginAccount[]>(() =>
+    getSavedLoginAccounts()
+  );
+
+  const idInputRef = useRef<HTMLInputElement | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setSavedAccounts(getSavedLoginAccounts());
+  }, [users, employees]);
+
+  const visibleSavedAccounts = useMemo(() => {
+    return savedAccounts
+      .map((acc) => {
+        const liveUser = users.find((u) => u.id === acc.userId);
+        if (liveUser) {
+          if (!liveUser.active) return null;
+          if (!isDemoAvailable && liveUser.role === 'visitor') return null;
+          const linkedEmp = findLinkedEmployee(liveUser.id, employees);
+          return {
+            ...acc,
+            name: liveUser.name,
+            role: liveUser.role,
+            appId: liveUser.username,
+            employeeId: linkedEmp?.employee_code || acc.employeeId,
+            shiftLabel: linkedEmp?.shift_label || acc.shiftLabel,
+          };
+        }
+        return null;
+      })
+      .filter((item): item is SavedLoginAccount => Boolean(item));
+  }, [savedAccounts, users, employees, isDemoAvailable]);
+
+  const selectedSavedAccount = useMemo(() => {
+    const cleanCurrent = username.trim().toLowerCase().replace(/^@/, '');
+    if (!cleanCurrent) return null;
+    return (
+      visibleSavedAccounts.find(
+        (acc) =>
+          acc.appId.toLowerCase() === cleanCurrent ||
+          (acc.employeeId && acc.employeeId.toLowerCase() === cleanCurrent)
+      ) || null
+    );
+  }, [visibleSavedAccounts, username]);
 
   useEffect(() => {
     if (lockoutSeconds <= 0) return;
@@ -83,12 +172,14 @@ export const LoginScreen: React.FC = () => {
     const targetPin = overridePin !== undefined ? overridePin : pin;
 
     if (!targetId) {
-      setError('অনুগ্রহ করে ইউজার বা সেলসম্যান আইডি লিখুন (Please enter User / Salesman ID)');
+      setError('অনুগ্রহ করে App ID বা Employee ID লিখুন (Please enter App ID or Employee ID)');
+      idInputRef.current?.focus();
       return;
     }
 
     if (!targetPin) {
-      setError('অনুগ্রহ করে পাসওয়ার্ড বা পিন দিন (Please enter Password / PIN)');
+      setError('অনুগ্রহ করে পাসওয়ার্ড বা পিন দিন (Please enter Password or PIN)');
+      passwordInputRef.current?.focus();
       return;
     }
 
@@ -118,6 +209,26 @@ export const LoginScreen: React.FC = () => {
     void handleSubmit();
   };
 
+  const handleOwnerSetupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const res = await setupOwnerAccount({
+        storeName: setupStoreName,
+        name: setupOwnerName,
+        username: setupAppId,
+        pin: setupPin,
+      });
+      if (!res.success) {
+        setError(res.message || 'Could not create owner account.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleInstantDemoLogin = () => {
     if (!isDemoAvailable) return;
     setUsername('demo');
@@ -127,21 +238,33 @@ export const LoginScreen: React.FC = () => {
   };
 
   const handleFillOwnerId = () => {
-    setUsername('admin');
+    setUsername(primaryOwner?.username || '');
     setPin('');
     setError('');
     setShowForgotHelp(false);
+    setTimeout(() => {
+      if (primaryOwner?.username) {
+        passwordInputRef.current?.focus();
+      } else {
+        idInputRef.current?.focus();
+      }
+    }, 40);
+  };
+
+  const handleSelectSavedAccount = (acc: SavedLoginAccount) => {
+    setUsername(acc.appId);
+    setPin('');
+    setError('');
     setTimeout(() => passwordInputRef.current?.focus(), 40);
   };
 
-  const handleCopyDemo = () => {
-    if (!isDemoAvailable) return;
-    navigator.clipboard?.writeText('ID: demo | PIN: 1234');
-    setCopiedDemo(true);
-    setTimeout(() => setCopiedDemo(false), 1800);
+  const handleRemoveSavedAccount = (userId: string) => {
+    const updated = removeSavedLoginAccount(userId);
+    setSavedAccounts(updated);
   };
 
   useEffect(() => {
+    if (needsInitialOwnerSetup) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInputFocused =
@@ -153,7 +276,7 @@ export const LoginScreen: React.FC = () => {
         } else if (e.key === 'Backspace') {
           handleBackspace();
         } else if (e.key === 'Enter') {
-          handleSubmit();
+          void handleSubmit();
         } else if (e.key === 'Escape') {
           handleClear();
         }
@@ -162,423 +285,441 @@ export const LoginScreen: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pin, username, rememberMe]);
+  }, [pin, username, rememberMe, needsInitialOwnerSetup]);
 
   return (
-    <div className="min-h-screen bg-[#f4f6fb] flex items-center justify-center p-4 sm:p-6 lg:p-10 text-slate-800 antialiased">
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center">
-        {/* LEFT COLUMN: Signature Clean White Login Card matching reference */}
-        <div className="lg:col-span-6 w-full max-w-[440px] mx-auto">
-          <div className="bg-white rounded-[32px] p-7 sm:p-10 shadow-[0_24px_60px_-15px_rgba(32,28,86,0.12)] border border-slate-100/90 transition-all">
-            {/* Subtle Store Brand Mark */}
-            <div className="flex items-center justify-center gap-2 mb-6">
-              {store.store_logo ? (
-                <img
-                  src={store.store_logo}
-                  alt={store.store_name}
-                  className="w-8 h-8 rounded-xl object-cover shadow-xs border border-slate-200"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-xl bg-[#201c56] text-white flex items-center justify-center font-bold text-sm">
-                  {store.store_name?.charAt(0) || 'R'}
-                </div>
-              )}
-              <span className="text-xs font-semibold text-slate-500 tracking-tight text-center">
-                {store.store_name}
-              </span>
-            </div>
+    <div className="min-h-screen bg-[#f4f6f9] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-800 antialiased">
+      {/* Quiet Store Identity Above Split Card */}
+      <div className="flex items-center gap-2.5 mb-5">
+        {store.store_logo ? (
+          <img
+            src={store.store_logo}
+            alt={store.store_name}
+            referrerPolicy="no-referrer"
+            className="w-8 h-8 rounded-full object-cover border border-slate-200 bg-white"
+          />
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-[#0d6efd] text-white flex items-center justify-center">
+            <Store className="w-4 h-4" />
+          </div>
+        )}
+        <div className="text-sm font-semibold text-slate-800 tracking-tight">
+          {store.store_name}
+        </div>
+      </div>
 
-            {/* Hero Headline & Subtitle */}
-            <div className="text-center space-y-2 mb-8">
-              <h1 className="text-[28px] sm:text-[32px] font-extrabold text-[#201c56] tracking-tight leading-[1.15] text-balance">
-                Login to your
-                <br />
-                account.
-              </h1>
-              <p className="text-[13px] text-slate-400 font-normal">
-                Hello, welcome back to your account
+      {/* Centered Clean 2-Column Split Card (Following Reference Layout) */}
+      <div className="pos-page-enter w-full max-w-[860px] bg-white rounded-[24px] border border-slate-200/80 shadow-[0_24px_60px_-20px_rgba(15,23,42,0.08)] overflow-hidden grid grid-cols-1 md:grid-cols-2">
+        {/* LEFT COLUMN: Choose an account (All Saved IDs Without Password) */}
+        <div className="p-7 sm:p-10 md:border-r md:border-slate-100 border-b md:border-b-0 border-slate-100 flex flex-col">
+          <h1 className="text-[20px] sm:text-[22px] font-bold text-slate-900 text-center tracking-tight mb-6">
+            Choose an account
+          </h1>
+
+          {visibleSavedAccounts.length > 0 ? (
+            <div className="flex-1 divide-y divide-slate-100 max-h-[340px] overflow-y-auto pr-1">
+              {visibleSavedAccounts.map((acc) => {
+                const isSelected = selectedSavedAccount?.userId === acc.userId;
+                const initials = acc.name
+                  .split(' ')
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((w) => w.charAt(0).toUpperCase())
+                  .join('');
+
+                return (
+                  <div
+                    key={acc.userId}
+                    onClick={() => handleSelectSavedAccount(acc)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectSavedAccount(acc);
+                      }
+                    }}
+                    className={`group flex items-center justify-between gap-3 py-3.5 px-2.5 -mx-2.5 rounded-xl transition-colors cursor-pointer ${
+                      isSelected ? 'bg-blue-50/70' : 'hover:bg-slate-50/90'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                          isSelected
+                            ? 'bg-[#0d6efd] text-white'
+                            : getAvatarTone(acc.userId || acc.name)
+                        }`}
+                      >
+                        {initials || acc.name.charAt(0).toUpperCase()}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[14px] font-semibold text-slate-900 truncate">
+                            {acc.name}
+                          </span>
+                        </div>
+                        <div className="text-[12.5px] text-slate-500 truncate mt-0.5 flex items-center gap-1.5">
+                          <span className="font-mono text-slate-600">@{acc.appId}</span>
+                          {acc.employeeId && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono">{acc.employeeId}</span>
+                            </>
+                          )}
+                          <span aria-hidden="true">·</span>
+                          <span>{getRoleDisplay(acc.role)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveSavedAccount(acc.userId);
+                        }}
+                        title="Remove saved account"
+                        aria-label={`Remove ${acc.name} from saved accounts`}
+                        className="p-1.5 rounded-full text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-80 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 transition-all cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center py-10 px-4">
+              <div className="w-11 h-11 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mb-3">
+                {needsInitialOwnerSetup ? (
+                  <ShieldCheck className="w-5 h-5 text-[#0d6efd]" />
+                ) : (
+                  <UserCheck className="w-5 h-5" />
+                )}
+              </div>
+              <p className="text-sm font-semibold text-slate-800">
+                {needsInitialOwnerSetup ? 'Fresh Store Terminal' : 'No saved accounts yet'}
+              </p>
+              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-[240px]">
+                {needsInitialOwnerSetup
+                  ? 'নতুন স্টোরের জন্য ডানপাশে আপনার Owner অ্যাকাউন্ট তৈরি করুন। এরপর স্টাফ, সেলসম্যান ও প্রোডাক্ট যোগ করতে পারবেন।'
+                  : 'যেসব স্টাফ বা সেলসম্যান লগইন করবে, তাদের আইডি পাসওয়ার্ড ছাড়াই এখানে দেখাবে।'}
               </p>
             </div>
+          )}
 
-            {/* Error Alert */}
-            {error && (
-              <div className="mb-5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+          <p className="mt-5 pt-3 border-t border-slate-100 text-[11.5px] text-slate-400 text-center">
+            IDs saved without password · Zero pre-saved staff or products
+          </p>
+        </div>
 
-            {/* Main Form with Notched Floating-Label Inputs */}
-            <form onSubmit={handleFormSubmit} className="space-y-5">
-              {/* Input 1: Salesman / User ID */}
-              <div className="relative">
-                <label
-                  htmlFor="pos-login-id"
-                  className={`absolute -top-2.5 left-3.5 bg-white px-1.5 text-[11px] font-medium transition-colors z-10 ${
-                    focusedField === 'id' ? 'text-[#6666f1]' : 'text-slate-400'
-                  }`}
-                >
-                  Salesman / User ID
-                </label>
-                <input
-                  id="pos-login-id"
-                  type="text"
-                  value={username}
-                  onFocus={() => setFocusedField('id')}
-                  onBlur={() => setFocusedField(null)}
-                  onChange={(e) => {
-                    setUsername(e.target.value);
-                    setError('');
-                  }}
-                  placeholder={isDemoAvailable ? 'demo or salesman id' : 'owner or salesman id'}
-                  className={`w-full h-13 px-4 rounded-xl border-[1.5px] bg-white text-sm text-slate-800 placeholder-slate-300 outline-none transition-all ${
-                    focusedField === 'id'
-                      ? 'border-[#6666f1] ring-4 ring-[#6666f1]/10'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                />
-              </div>
+        {/* RIGHT COLUMN: Sign in another account OR First-Time Owner Setup */}
+        <div className="p-7 sm:p-10 flex flex-col justify-center">
+          {needsInitialOwnerSetup ? (
+            <>
+              <h2 className="text-[20px] sm:text-[22px] font-bold text-slate-900 text-center tracking-tight mb-6">
+                Create Owner account
+              </h2>
 
-              {/* Input 2: Password / PIN */}
-              <div className="relative">
-                <label
-                  htmlFor="pos-login-pass"
-                  className={`absolute -top-2.5 left-3.5 bg-white px-1.5 text-[11px] font-medium transition-colors z-10 ${
-                    focusedField === 'pass' ? 'text-[#6666f1]' : 'text-slate-400'
-                  }`}
-                >
-                  Password / PIN
-                </label>
-                <input
-                  ref={passwordInputRef}
-                  id="pos-login-pass"
-                  type={showPin ? 'text' : 'password'}
-                  value={pin}
-                  onFocus={() => setFocusedField('pass')}
-                  onBlur={() => setFocusedField(null)}
-                  onChange={(e) => {
-                    setPin(e.target.value);
-                    setError('');
-                  }}
-                  placeholder="Your Password or PIN"
-                  className={`w-full h-13 px-4 pr-12 rounded-xl border-[1.5px] bg-white text-sm text-slate-800 placeholder-slate-300 outline-none transition-all ${
-                    focusedField === 'pass'
-                      ? 'border-[#6666f1] ring-4 ring-[#6666f1]/10'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                />
+              {error && (
+                <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleOwnerSetupSubmit} className="space-y-3.5">
+                <div>
+                  <label htmlFor="setup-store-name" className="block text-xs font-medium text-slate-700 mb-1">
+                    Shop / Store Name
+                  </label>
+                  <input
+                    id="setup-store-name"
+                    type="text"
+                    value={setupStoreName}
+                    onChange={(e) => setSetupStoreName(e.target.value)}
+                    placeholder="e.g. Bismillah Super Store"
+                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="setup-owner-name" className="block text-xs font-medium text-slate-700 mb-1">
+                    Owner Name
+                  </label>
+                  <input
+                    id="setup-owner-name"
+                    type="text"
+                    required
+                    value={setupOwnerName}
+                    onChange={(e) => {
+                      setSetupOwnerName(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="e.g. Md. Raihan"
+                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="setup-app-id" className="block text-xs font-medium text-slate-700 mb-1">
+                    Owner App ID
+                  </label>
+                  <input
+                    id="setup-app-id"
+                    type="text"
+                    required
+                    value={setupAppId}
+                    onChange={(e) => {
+                      setSetupAppId(e.target.value.replace(/\s+/g, ''));
+                      setError('');
+                    }}
+                    placeholder="e.g. owner or admin"
+                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="setup-pin" className="block text-xs font-medium text-slate-700 mb-1">
+                    Password / PIN (Min 4 characters)
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="setup-pin"
+                      type={showPin ? 'text' : 'password'}
+                      required
+                      value={setupPin}
+                      onChange={(e) => {
+                        setSetupPin(e.target.value);
+                        setError('');
+                      }}
+                      placeholder="Set your login password or PIN"
+                      className="w-full h-11 px-3.5 pr-11 rounded-xl border border-transparent bg-[#f1f3f5] focus:bg-white text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      aria-label={showPin ? 'Hide password' : 'Show password'}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    >
+                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
                 <button
-                  type="button"
-                  onClick={() => setShowPin(!showPin)}
-                  aria-label={showPin ? 'Hide password' : 'Show password'}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full h-11 rounded-full bg-[#0d6efd] hover:bg-[#0b5ed7] disabled:opacity-50 active:scale-[0.99] text-white font-semibold text-sm shadow-xs transition-all cursor-pointer mt-2"
                 >
-                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {isSubmitting ? 'Creating Account...' : 'Create Owner & Sign In'}
                 </button>
-              </div>
+              </form>
+            </>
+          ) : (
+            <>
+              <h2 className="text-[20px] sm:text-[22px] font-bold text-slate-900 text-center tracking-tight mb-6">
+                {selectedSavedAccount
+                  ? `Sign in as ${selectedSavedAccount.name}`
+                  : 'Sign in another account'}
+              </h2>
 
-              {/* Remember me & Forgot Password row */}
-              <div className="flex items-center justify-between text-xs pt-0.5">
+              {error && (
+                <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleFormSubmit} className="space-y-4">
+                {/* App ID / Employee ID Field */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="pos-login-id" className="text-xs font-medium text-slate-700">
+                      App ID / Employee ID
+                    </label>
+                    {primaryOwner && (
+                      <button
+                        type="button"
+                        onClick={handleFillOwnerId}
+                        className="text-xs font-medium text-[#1a73e8] hover:underline cursor-pointer"
+                      >
+                        Use Owner ID
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    ref={idInputRef}
+                    id="pos-login-id"
+                    type="text"
+                    value={username}
+                    onChange={(e) => {
+                      setUsername(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="e.g. @username or EMP-001"
+                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 transition-all"
+                  />
+                </div>
+
+                {/* Password / PIN Field */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="pos-login-pass" className="text-xs font-medium text-slate-700">
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotHelp(!showForgotHelp)}
+                      className="text-xs font-medium text-[#1a73e8] hover:underline cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      ref={passwordInputRef}
+                      id="pos-login-pass"
+                      type={showPin ? 'text' : 'password'}
+                      value={pin}
+                      onChange={(e) => {
+                        setPin(e.target.value);
+                        setError('');
+                      }}
+                      placeholder="Your password or PIN"
+                      className="w-full h-11 px-3.5 pr-11 rounded-xl border border-transparent bg-[#f1f3f5] focus:bg-white text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/20 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      aria-label={showPin ? 'Hide password' : 'Show password'}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    >
+                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {showForgotHelp && (
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11.5px] text-slate-600 leading-relaxed space-y-1.5">
+                    <p>
+                      সেলসম্যান পাসওয়ার্ড ভুলে গেলে <strong>Owner / Admin</strong> অ্যাকাউন্ট থেকে লগইন করে{' '}
+                      <span className="font-semibold text-slate-900">Staff & Employees</span> মেনু থেকে নতুন পাসওয়ার্ড সেট করতে পারবেন।
+                    </p>
+                  </div>
+                )}
+
+                {/* Primary Pill Sign In CTA matching reference */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting || lockoutSeconds > 0}
+                  className="w-full h-11 rounded-full bg-[#0d6efd] hover:bg-[#0b5ed7] disabled:opacity-50 active:scale-[0.99] text-white font-semibold text-sm shadow-xs transition-all cursor-pointer mt-2"
+                >
+                  {lockoutSeconds > 0
+                    ? `Locked (${lockoutSeconds}s)`
+                    : isSubmitting
+                    ? 'Signing In...'
+                    : 'Sign In'}
+                </button>
+              </form>
+
+              {/* Subtle Bottom Helper Links matching reference footer row */}
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs text-slate-500">
                 <button
                   type="button"
                   onClick={() => setRememberMe(!rememberMe)}
-                  className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer py-1"
+                  className="inline-flex items-center gap-1.5 hover:text-slate-800 transition-colors cursor-pointer py-1"
                 >
                   <span
-                    className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
+                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
                       rememberMe
-                        ? 'border-[#6666f1] bg-[#6666f1] text-white'
-                        : 'border-slate-300 bg-white'
+                        ? 'bg-[#0d6efd] border-[#0d6efd] text-white'
+                        : 'bg-white border-slate-300'
                     }`}
                   >
                     {rememberMe && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                   </span>
-                  <span>Remember me</span>
+                  <span>Remember ID</span>
                 </button>
+
+                <span aria-hidden="true">·</span>
 
                 <button
                   type="button"
-                  onClick={() => setShowForgotHelp(!showForgotHelp)}
-                  className="text-slate-400 hover:text-[#6666f1] font-medium transition-colors cursor-pointer py-1"
+                  onClick={() => setShowKeypad(!showKeypad)}
+                  className="inline-flex items-center gap-1 font-medium text-[#1a73e8] hover:underline cursor-pointer py-1"
                 >
-                  Forgot Password?
+                  <Grid3X3 className="w-3.5 h-3.5" />
+                  <span>{showKeypad ? 'Hide Keypad' : 'PIN Keypad'}</span>
                 </button>
-              </div>
 
-              {/* Forgot Password Inline Helper */}
-              {showForgotHelp && (
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-2">
-                  <p className="leading-relaxed">
-                    সেলসম্যান পাসওয়ার্ড ভুলে গেলে <strong>Owner / Admin</strong> অ্যাকাউন্ট থেকে লগইন করে{' '}
-                    <span className="font-semibold text-[#201c56]">Salesman & Users</span> মেনু থেকে নতুন পাসওয়ার্ড সেট করতে পারবেন।
-                  </p>
-                  {isDemoAvailable && (
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/70">
-                      <span className="font-mono text-slate-500">Demo: demo / 1234</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUsername('demo');
-                          setPin('1234');
-                          setShowForgotHelp(false);
-                        }}
-                        className="text-[#6666f1] font-bold hover:underline cursor-pointer"
-                      >
-                        Auto-fill Demo
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Primary Periwinkle Login CTA */}
-              <button
-                type="submit"
-                disabled={isSubmitting || lockoutSeconds > 0}
-                className="w-full h-13 rounded-xl bg-[#6666f1] hover:bg-[#5555e6] disabled:opacity-50 active:scale-[0.99] text-white font-semibold text-sm shadow-[0_12px_24px_-8px_rgba(102,102,241,0.5)] transition-all cursor-pointer"
-              >
-                {lockoutSeconds > 0
-                  ? `Locked (${lockoutSeconds}s)`
-                  : isSubmitting
-                  ? 'Verifying...'
-                  : 'Login'}
-              </button>
-            </form>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-6">
-              <div className="h-px flex-1 bg-slate-200/80" />
-              <span className="text-[11px] text-slate-400 whitespace-nowrap">
-                or quick access with
-              </span>
-              <div className="h-px flex-1 bg-slate-200/80" />
-            </div>
-
-            {/* Clean Action Cards matching reference bottom row */}
-            <div className={`grid gap-3 ${isDemoAvailable ? 'grid-cols-3' : 'grid-cols-2'}`}>
-              {isDemoAvailable && (
-                <button
-                  type="button"
-                  onClick={handleInstantDemoLogin}
-                  title="1-Click Demo Login (ID: demo, PIN: 1234)"
-                  className="h-12 rounded-xl border border-slate-200 bg-white hover:border-[#6666f1]/50 hover:bg-indigo-50/40 active:scale-[0.98] flex items-center justify-center gap-1.5 text-xs font-semibold text-[#201c56] transition-all cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4 text-[#6666f1]" />
-                  <span>Demo</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setShowMobileKeypad(!showMobileKeypad)}
-                title="Toggle Touch PIN Keypad"
-                className={`h-12 rounded-xl border active:scale-[0.98] flex items-center justify-center gap-1.5 text-xs font-semibold transition-all cursor-pointer ${
-                  showMobileKeypad
-                    ? 'border-[#6666f1] bg-indigo-50 text-[#6666f1]'
-                    : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                }`}
-              >
-                <Grid3X3 className="w-4 h-4" />
-                <span>Keypad</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleFillOwnerId}
-                title="Fill Owner Admin ID"
-                className="h-12 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700 transition-all cursor-pointer"
-              >
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Owner</span>
-              </button>
-            </div>
-
-            {/* Collapsible Touch Keypad (especially useful on Mobile / Tablet or when clicked) */}
-            {showMobileKeypad && (
-              <div className="mt-5 pt-5 border-t border-slate-100">
-                <div className="grid grid-cols-3 gap-2">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                {isDemoAvailable && (
+                  <>
+                    <span aria-hidden="true">·</span>
                     <button
-                      key={num}
                       type="button"
-                      onClick={() => handleNumberPress(num.toString())}
-                      className="h-11 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:text-[#6666f1] active:scale-95 border border-slate-200/80 font-mono font-bold text-base text-[#201c56] transition-all cursor-pointer"
+                      onClick={handleInstantDemoLogin}
+                      className="inline-flex items-center gap-1 font-medium text-[#1a73e8] hover:underline cursor-pointer py-1"
                     >
-                      {num}
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Demo Login</span>
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={handleClear}
-                    className="h-11 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs border border-rose-100 transition-all cursor-pointer"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleNumberPress('0')}
-                    className="h-11 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:text-[#6666f1] active:scale-95 border border-slate-200/80 font-mono font-bold text-base text-[#201c56] transition-all cursor-pointer"
-                  >
-                    0
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleBackspace}
-                    aria-label="Backspace"
-                    className="h-11 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/80 flex items-center justify-center transition-all cursor-pointer"
-                  >
-                    <Delete className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Quiet Unboxed Footer Metadata */}
-            <div className="mt-6 text-center text-[11px] text-slate-400">
-              {isDemoAvailable ? (
-                <>
-                  <span>Demo ID: </span>
-                  <span className="font-mono font-semibold text-slate-600">demo</span>
-                  <span className="mx-1.5">·</span>
-                  <span>PIN: </span>
-                  <span className="font-mono font-semibold text-slate-600">1234</span>
-                </>
-              ) : (
-                <span>PBKDF2-SHA256 & AES-GCM Encrypted Terminal</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: Companion Store Overview & Touch Keypad */}
-        <div className="lg:col-span-6 w-full max-w-[440px] mx-auto">
-          <div className="bg-white rounded-[32px] p-6 sm:p-8 shadow-[0_24px_60px_-15px_rgba(32,28,86,0.08)] border border-slate-100/90 space-y-6">
-            {/* Greeting Header matching right phone card in reference */}
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm text-slate-400 font-medium">Howdy,</p>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-[#201c56] tracking-tight leading-snug break-words">
-                  {store.store_name}
-                </h2>
-              </div>
-              <div className="w-12 h-12 rounded-2xl bg-[#201c56] text-white flex items-center justify-center font-bold text-lg shadow-sm overflow-hidden shrink-0">
-                {store.store_logo ? (
-                  <img
-                    src={store.store_logo}
-                    alt={store.store_name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <Store className="w-5 h-5" />
+                  </>
                 )}
               </div>
-            </div>
 
-            {/* Dual Gradient Feature Cards matching reference aesthetic */}
-            <div className="grid grid-cols-2 gap-3.5">
-              {isDemoAvailable ? (
-                <button
-                  type="button"
-                  onClick={handleInstantDemoLogin}
-                  className="text-left p-4 rounded-2xl bg-gradient-to-br from-[#0095ff] to-[#00c6ff] text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <UserCheck className="w-4 h-4 text-white/90" />
-                    <ChevronRight className="w-4 h-4 text-white/80" />
+              {/* Optional Collapsible Touch PIN Keypad */}
+              {showKeypad && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => handleNumberPress(num.toString())}
+                        className="h-10 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-[#0d6efd] active:scale-95 font-mono font-bold text-sm text-slate-800 transition-all cursor-pointer"
+                      >
+                        {num}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={handleClear}
+                      className="h-10 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold text-xs transition-all cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNumberPress('0')}
+                      className="h-10 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-[#0d6efd] active:scale-95 font-mono font-bold text-sm text-slate-800 transition-all cursor-pointer"
+                    >
+                      0
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBackspace}
+                      aria-label="Backspace"
+                      className="h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-all cursor-pointer"
+                    >
+                      <Delete className="w-4 h-4" />
+                    </button>
                   </div>
-                  <div className="text-lg font-extrabold font-mono tabular-nums">demo / 1234</div>
-                  <div className="text-[11px] text-white/90 mt-0.5">1-Click Demo Login</div>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleFillOwnerId}
-                  className="text-left p-4 rounded-2xl bg-gradient-to-br from-[#0095ff] to-[#00c6ff] text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <ShieldCheck className="w-4 h-4 text-white/90" />
-                    <ChevronRight className="w-4 h-4 text-white/80" />
-                  </div>
-                  <div className="text-lg font-extrabold font-mono tabular-nums">Owner Login</div>
-                  <div className="text-[11px] text-white/90 mt-0.5">Demo Disabled (Production)</div>
-                </button>
+                </div>
               )}
-
-              <button
-                type="button"
-                onClick={isDemoAvailable ? handleCopyDemo : handleFillOwnerId}
-                className="text-left p-4 rounded-2xl bg-gradient-to-br from-[#7c3aed] to-[#f43f5e] text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <KeyRound className="w-4 h-4 text-white/90" />
-                  {copiedDemo ? (
-                    <Check className="w-4 h-4 text-white" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-white/80" />
-                  )}
-                </div>
-                <div className="text-lg font-extrabold">Salesman ID</div>
-                <div className="text-[11px] text-white/90 mt-0.5">
-                  {copiedDemo ? 'Demo credentials copied' : 'ID & Password Supported'}
-                </div>
-              </button>
-            </div>
-
-            {/* Quick Touch PIN Pad */}
-            <div className="pt-2 space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-[#201c56]">Quick Touch PIN Pad</span>
-                <span className="font-mono text-slate-400">
-                  ID: <strong className="text-slate-700">{username.trim() || (isDemoAvailable ? 'demo' : 'admin')}</strong>
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2.5">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => handleNumberPress(num.toString())}
-                    className="h-12 rounded-2xl bg-[#f4f6fb] hover:bg-indigo-50 hover:text-[#6666f1] active:scale-95 font-mono font-bold text-lg text-[#201c56] transition-all cursor-pointer"
-                  >
-                    {num}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="h-12 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-all cursor-pointer"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleNumberPress('0')}
-                  className="h-12 rounded-2xl bg-[#f4f6fb] hover:bg-indigo-50 hover:text-[#6666f1] active:scale-95 font-mono font-bold text-lg text-[#201c56] transition-all cursor-pointer"
-                >
-                  0
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBackspace}
-                  aria-label="Backspace"
-                  className="h-12 rounded-2xl bg-[#f4f6fb] hover:bg-slate-200/70 text-slate-600 flex items-center justify-center transition-all cursor-pointer"
-                >
-                  <Delete className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Quiet Store Location & Offline Note */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-              <span className="truncate max-w-[240px]">
-                {store.store_address || 'Smart Grocery POS Terminal'}
-              </span>
-              <span>Offline Ready</span>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Subtle Store Address Footer */}
+      <p className="mt-5 text-[11.5px] text-slate-400 text-center">
+        {store.store_address ? `${store.store_address} · ` : ''}Offline Ready
+      </p>
     </div>
   );
 };

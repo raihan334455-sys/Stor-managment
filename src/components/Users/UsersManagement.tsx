@@ -19,18 +19,41 @@ import {
   AlertCircle,
   Lock,
 } from 'lucide-react';
-import { User, UserRole } from '../../types';
+import { EmployeeShiftType, User, UserRole } from '../../types';
 import { getPermissionsForRole } from '../../utils/security';
 
+const SHIFT_TIMES: Record<EmployeeShiftType, { label: string; start: string; end: string }> = {
+  morning: { label: 'Morning Shift', start: '08:00', end: '16:00' },
+  evening: { label: 'Evening Shift', start: '14:00', end: '22:00' },
+  night: { label: 'Night Shift', start: '22:00', end: '06:00' },
+  full_day: { label: 'Full Day', start: '09:00', end: '21:00' },
+  custom: { label: 'Custom Shift', start: '09:00', end: '18:00' },
+};
+
 export const UsersManagement: React.FC = () => {
-  const { users, activeUser, loginWithPin, saveUser, deleteUser, checkPermission, store, setActiveTab } = useApp();
+  const {
+    users,
+    employees,
+    activeUser,
+    loginWithPin,
+    saveUser,
+    saveUnifiedStaff,
+    deleteUser,
+    checkPermission,
+    store,
+    setActiveTab,
+  } = useApp();
 
   const [showAddEditModal, setShowAddEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [roleFilter, setRoleFilter] = useState<string>('all');
 
-  // Form states
+  // Unified Staff Form states
   const [name, setName] = useState('');
+  const [employeeCode, setEmployeeCode] = useState('');
+  const [empDesignation, setEmpDesignation] = useState('Salesman');
+  const [empShift, setEmpShift] = useState<EmployeeShiftType>('full_day');
+  const [empSalary, setEmpSalary] = useState('12000');
   const [username, setUsername] = useState('');
   const [usernameEditedManually, setUsernameEditedManually] = useState(false);
   const [phone, setPhone] = useState('');
@@ -51,24 +74,26 @@ export const UsersManagement: React.FC = () => {
 
   if (!checkPermission('user_manage')) {
     return (
-      <div className="p-8 max-w-lg mx-auto my-16 text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
-        <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
-          <ShieldAlert className="w-8 h-8" />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-            আপনার অ্যাকাউন্টে ইউজার ও সেলসম্যান সেটিংস (Salesman & Security) দেখার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
-          </p>
-        </div>
-        <div className="pt-2">
-          <button
-            onClick={() => setActiveTab('pos')}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
-          </button>
+      <div className="min-h-full w-full bg-slate-50 flex items-center justify-center p-4 sm:p-8">
+        <div className="pos-modal-enter p-8 max-w-lg w-full text-center bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
+          <div className="w-16 h-16 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-slate-800">অ্যাক্সেস সংরক্ষিত (Access Restricted)</h2>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+              আপনার অ্যাকাউন্টে ইউজার ও সেলসম্যান সেটিংস (Salesman & Security) দেখার অনুমতি নেই। কেবল অ্যাডমিন এই ডেটা দেখতে পারবেন।
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => setActiveTab('pos')}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span>পিওএস টার্মিনালে ফিরে যান (Return to POS)</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -81,9 +106,20 @@ export const UsersManagement: React.FC = () => {
       .replace(/[^a-z0-9_.-]+/g, '_')
       .replace(/^_+|_+$/g, '');
 
+  const getNextEmpCode = () => {
+    const used = new Set(employees.map((e) => e.employee_code.trim().toUpperCase()));
+    let seq = 1;
+    while (used.has(`EMP-${String(seq).padStart(3, '0')}`)) seq += 1;
+    return `EMP-${String(seq).padStart(3, '0')}`;
+  };
+
   const handleOpenAdd = (defaultRole: UserRole = 'salesman') => {
     setEditingUser(null);
     setName('');
+    setEmployeeCode(getNextEmpCode());
+    setEmpDesignation(defaultRole === 'cashier' ? 'Cashier' : 'Salesman');
+    setEmpShift('full_day');
+    setEmpSalary('12000');
     setUsername('');
     setUsernameEditedManually(false);
     setPhone('');
@@ -96,11 +132,16 @@ export const UsersManagement: React.FC = () => {
   };
 
   const handleOpenEdit = (user: User) => {
+    const linked = employees.find((e) => e.linked_user_id === user.id);
     setEditingUser(user);
     setName(user.name);
+    setEmployeeCode(linked?.employee_code || getNextEmpCode());
+    setEmpDesignation(linked?.designation || (user.role === 'admin' ? 'Owner / Admin' : user.role));
+    setEmpShift(linked?.shift || 'full_day');
+    setEmpSalary(String(linked?.basic_salary ?? 0));
     setUsername(user.username || '');
     setUsernameEditedManually(true);
-    setPhone(user.phone || '');
+    setPhone(user.phone || linked?.phone || '');
     setRole(user.role);
     setPin(''); // Never populate stored PBKDF2 hash into password input
     setShowFormPass(false);
@@ -133,14 +174,15 @@ export const UsersManagement: React.FC = () => {
     const cleanName = name.trim();
     const cleanUsername = (username.trim() || slugifyUsername(cleanName)).toLowerCase().replace(/\s+/g, '_');
     const cleanPin = pin.trim();
+    const cleanEmpCode = employeeCode.trim() || getNextEmpCode();
 
     if (!cleanName) {
-      setFormError('অনুগ্রহ করে সেলসম্যানের নাম লিখুন (Full Name is required).');
+      setFormError('অনুগ্রহ করে স্টাফ/সেলসম্যানের নাম লিখুন (Full Name is required).');
       return;
     }
 
     if (!cleanUsername || cleanUsername.length < 2) {
-      setFormError('অনুগ্রহ করে কমপক্ষে ২ অক্ষরের একটি ইউজার/সেলসম্যান আইডি দিন (Login ID must be at least 2 characters).');
+      setFormError('অনুগ্রহ করে কমপক্ষে ২ অক্ষরের একটি App / Login ID দিন (Login ID must be at least 2 characters).');
       return;
     }
 
@@ -168,26 +210,61 @@ export const UsersManagement: React.FC = () => {
       return;
     }
 
-    const userData: User = {
-      id: editingUser ? editingUser.id : `usr_${Date.now()}`,
-      name: cleanName,
-      username: cleanUsername,
-      phone: phone.trim() || undefined,
-      role,
-      pin: editingUser ? editingUser.pin : cleanPin,
-      must_change_pin: editingUser?.must_change_pin,
-      active,
-      permissions: getPermissionsForRole(role),
-      created_at: editingUser ? editingUser.created_at : new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      sync_status: 'pending',
-      branch_id: store.branch_id,
-      device_id: 'DEV-POS-01',
-    };
+    const linkedEmp = editingUser ? employees.find((emp) => emp.linked_user_id === editingUser.id) : undefined;
+    if (role !== 'visitor') {
+      const dupEmp = employees.find(
+        (emp) => emp.employee_code.trim().toLowerCase() === cleanEmpCode.toLowerCase() && emp.id !== linkedEmp?.id
+      );
+      if (dupEmp) {
+        setFormError(`Employee ID "${cleanEmpCode}" ইতোমধ্যে (${dupEmp.name}) ব্যবহার করছেন।`);
+        return;
+      }
+    }
 
     setIsSaving(true);
     try {
-      await saveUser(userData, cleanPin || undefined);
+      if (editingUser?.role === 'visitor' || typeof saveUnifiedStaff !== 'function') {
+        const userData: User = {
+          id: editingUser ? editingUser.id : `user_${Date.now()}`,
+          name: cleanName,
+          username: cleanUsername,
+          phone: phone.trim() || undefined,
+          role,
+          pin: editingUser ? editingUser.pin : cleanPin,
+          must_change_pin: editingUser?.must_change_pin,
+          active,
+          permissions: getPermissionsForRole(role),
+          created_at: editingUser ? editingUser.created_at : new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          sync_status: 'pending',
+          branch_id: store.branch_id,
+          device_id: store.device_id,
+        };
+        await saveUser(userData, cleanPin || undefined);
+      } else {
+        const shiftMeta = SHIFT_TIMES[empShift] || SHIFT_TIMES.full_day;
+        await saveUnifiedStaff({
+          employeeId: linkedEmp?.id,
+          linkedUserId: editingUser?.id,
+          employeeCode: cleanEmpCode,
+          name: cleanName,
+          designation: empDesignation.trim() || (role === 'cashier' ? 'Cashier' : role === 'manager' ? 'Store Manager' : role === 'admin' ? 'Owner / Admin' : 'Salesman'),
+          department: linkedEmp?.department || (role === 'admin' ? 'Management' : 'Sales & POS'),
+          phone: phone.trim(),
+          email: linkedEmp?.email || editingUser?.email,
+          joiningDate: linkedEmp?.joining_date || new Date().toISOString().split('T')[0],
+          basicSalary: parseFloat(empSalary) || 0,
+          shift: empShift,
+          shiftLabel: shiftMeta.label,
+          shiftStart: linkedEmp?.shift_start || shiftMeta.start,
+          shiftEnd: linkedEmp?.shift_end || shiftMeta.end,
+          active,
+          enablePosLogin: true,
+          username: cleanUsername,
+          role,
+          plainPin: cleanPin || undefined,
+        });
+      }
       setShowAddEditModal(false);
     } finally {
       setIsSaving(false);
@@ -248,16 +325,16 @@ export const UsersManagement: React.FC = () => {
   const salesmanCount = visibleUsers.filter((u) => u.role === 'salesman' || u.role === 'cashier').length;
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-full w-full text-slate-800 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
             <UserCheck className="w-6 h-6 text-blue-600" />
-            <span>Salesman & Staff Accounts (সেলসম্যান ও স্টাফ আইডি)</span>
+            <span>Staff, Salesman &amp; Login Roles (স্টাফ ও সেলসম্যান)</span>
           </h1>
           <p className="text-xs text-slate-500">
-            নতুন সেলসম্যান যোগ করুন, লগইন আইডি (User ID) এবং পাসওয়ার্ড/পিন (Password/PIN) সেট বা পরিবর্তন করুন।
+            Employee, Salesman ও Staff একই প্রোফাইল — এখান থেকে যুক্ত করলে Employee ID, Shift ও বেতনও স্বয়ংক্রিয়ভাবে সেট হবে।
           </p>
         </div>
 
@@ -266,7 +343,7 @@ export const UsersManagement: React.FC = () => {
           className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 transition-colors self-start sm:self-auto cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
-          <span>Add Salesman / Staff (নতুন সেলসম্যান)</span>
+          <span>Add Staff / Salesman (নতুন স্টাফ)</span>
         </button>
       </div>
 
@@ -312,7 +389,14 @@ export const UsersManagement: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredUsers.map((user) => {
           const isCurrent = user.id === activeUser.id;
-          const isProtectedOwner = user.id === 'user_admin';
+          const isProtectedOwner =
+            user.id === 'user_admin' ||
+            (user.role === 'admin' &&
+              (user.id === activeUser.id ||
+                users.filter((u) => u.role === 'admin' && u.active).length <= 1));
+          const linkedEmp =
+            employees.find((e) => e.linked_user_id === user.id && e.active) ||
+            employees.find((e) => e.linked_user_id === user.id);
 
           return (
             <div
@@ -376,9 +460,26 @@ export const UsersManagement: React.FC = () => {
                 {/* Credentials Box */}
                 <div className="mt-4 pt-3 border-t border-slate-100 space-y-2 text-xs">
                   <div className="flex items-center justify-between text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
-                    <span className="text-slate-500 font-medium">Login ID:</span>
+                    <span className="text-slate-500 font-medium">App ID:</span>
                     <span className="font-mono font-bold text-blue-700">@{user.username}</span>
                   </div>
+
+                  <div className="flex items-center justify-between text-slate-600 bg-indigo-50/70 px-2.5 py-1.5 rounded-lg border border-indigo-100">
+                    <span className="text-slate-500 font-medium">Employee ID:</span>
+                    <span className="font-mono font-bold text-indigo-700">
+                      {linkedEmp ? linkedEmp.employee_code : 'Demo'}
+                    </span>
+                  </div>
+
+                  {linkedEmp && (
+                    <div className="flex items-center justify-between text-slate-600 px-1">
+                      <span className="text-slate-400">Shift &amp; Salary:</span>
+                      <span className="font-semibold text-slate-700">
+                        {linkedEmp.shift_label || 'Full Day'} · {store.currency_symbol}
+                        {linkedEmp.basic_salary.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
                     <span className="text-slate-500 font-medium">Password / PIN:</span>
@@ -524,25 +625,42 @@ export const UsersManagement: React.FC = () => {
             )}
 
             <form onSubmit={handleSave} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Full Name (পুরো নাম) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Md. Karim (Salesman)"
-                  value={name}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Full Name (পুরো নাম) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Md. Karim (Salesman)"
+                    value={name}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                {role !== 'visitor' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Employee ID (কোড) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={employeeCode}
+                      onChange={(e) => setEmployeeCode(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-700 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Dedicated Salesman Login ID & Password/PIN Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-blue-50/60 border border-blue-100 rounded-xl">
                 <div>
                   <label className="block text-xs font-bold text-blue-900 mb-1">
-                    Salesman / Login ID *
+                    App ID / Login ID *
                   </label>
                   <div className="relative">
                     <span className="absolute left-2.5 top-2 text-blue-500 font-mono text-xs font-bold">@</span>
@@ -559,7 +677,7 @@ export const UsersManagement: React.FC = () => {
                       className="w-full bg-white border border-blue-200 rounded-xl pl-6 pr-2.5 py-2 text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-blue-500"
                     />
                   </div>
-                  <span className="text-[10px] text-slate-500 mt-1 block">লগইন করার ইউজার আইডি</span>
+                  <span className="text-[10px] text-slate-500 mt-1 block">লগইন করার App আইডি</span>
                 </div>
 
                 <div>
@@ -610,11 +728,19 @@ export const UsersManagement: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Access Role *</label>
                   <select
                     value={role}
+                    disabled={
+                      editingUser?.id === 'user_admin' ||
+                      editingUser?.role === 'visitor' ||
+                      (editingUser?.role === 'admin' &&
+                        (editingUser?.id === activeUser.id ||
+                          users.filter((u) => u.role === 'admin' && u.active).length <= 1))
+                    }
                     onChange={(e) => setRole(e.target.value as UserRole)}
                     className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                   >
                     <option value="salesman">Salesman (সেলসম্যান)</option>
                     <option value="cashier">Cashier (ক্যাশিয়ার)</option>
+                    <option value="stock_manager">Stock Manager</option>
                     <option value="manager">Store Manager (ম্যানেজার)</option>
                     <option value="admin">Administrator (অ্যাডমিন)</option>
                   </select>
@@ -632,6 +758,45 @@ export const UsersManagement: React.FC = () => {
                 </div>
               </div>
 
+              {role !== 'visitor' && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Designation</label>
+                    <input
+                      type="text"
+                      value={empDesignation}
+                      onChange={(e) => setEmpDesignation(e.target.value)}
+                      placeholder="Salesman"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Duty Shift</label>
+                    <select
+                      value={empShift}
+                      onChange={(e) => setEmpShift(e.target.value as EmployeeShiftType)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-semibold"
+                    >
+                      <option value="full_day">Full Day</option>
+                      <option value="morning">Morning</option>
+                      <option value="evening">Evening</option>
+                      <option value="night">Night</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Salary ({store.currency_symbol})</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={empSalary}
+                      onChange={(e) => setEmpSalary(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer pt-1">
                   <input
@@ -640,7 +805,7 @@ export const UsersManagement: React.FC = () => {
                     onChange={(e) => setActive(e.target.checked)}
                     className="rounded border-slate-300 text-blue-600 focus:ring-0"
                   />
-                  <span className="font-semibold">Account Active (লগইন অনুমোদিত)</span>
+                  <span className="font-semibold">Account &amp; Staff Active (সক্রিয়)</span>
                 </label>
               </div>
 

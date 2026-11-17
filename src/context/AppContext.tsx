@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import {
   StoreSettings,
-  User,
   Category,
   Product,
   ProductVariant,
@@ -35,7 +34,10 @@ import {
   CashFlowEntry,
   FinancialAccount,
   FinancialAccountTx,
+  User,
+  UserRole,
   Employee,
+  UnifiedStaffInput,
   AttendanceRecord,
   AttendanceStatus,
   SalaryPayment,
@@ -62,6 +64,7 @@ import {
   verifySignedSession,
   verifyUsersDirectoryIntegrity,
 } from '../utils/security';
+import { saveLoggedInAccount } from '../utils/savedLogins';
 
 import { testFirestoreConnection } from '../services/firebaseFirestoreSync';
 
@@ -224,8 +227,9 @@ interface AppContextType {
     time: string;
   }) => FinancialAccountTx | null;
 
-  // Employee Management
+  // Unified Staff / Employee / Salesman Management
   saveEmployee: (employee: Employee) => void;
+  saveUnifiedStaff: (input: UnifiedStaffInput) => Promise<{ employee: Employee; user?: User }>;
   markAttendance: (data: {
     employee_id: string;
     date: string;
@@ -266,6 +270,13 @@ interface AppContextType {
     userIdOrUsername: string,
     pin: string
   ) => Promise<{ success: boolean; message?: string; lockedSeconds?: number }>;
+  setupOwnerAccount: (input: {
+    storeName?: string;
+    name: string;
+    username: string;
+    pin: string;
+    phone?: string;
+  }) => Promise<{ success: boolean; message?: string }>;
   changeOwnPin: (
     currentPin: string,
     newPin: string
@@ -490,6 +501,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
         const demoBlocked = matched?.role === 'visitor' && loadedStore.demo_mode_enabled === false;
         if (matched && !demoBlocked) {
+          saveLoggedInAccount(matched, DBStorage.getEmployees());
           setActiveUser(matched);
           setIsAuthenticated(true);
         } else {
@@ -2299,14 +2311,192 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return tx;
   };
 
-  // Employee Management
+  const getNextEmployeeCode = (list: Employee[]): string => {
+    const used = new Set(list.map((e) => e.employee_code.trim().toUpperCase()));
+    let seq = 1;
+    while (used.has(`EMP-${String(seq).padStart(3, '0')}`)) {
+      seq += 1;
+    }
+    return `EMP-${String(seq).padStart(3, '0')}`;
+  };
+
+  const roleToDesignation = (role: UserRole): string => {
+    switch (role) {
+      case 'admin':
+        return 'Owner / Admin';
+      case 'manager':
+        return 'Store Manager';
+      case 'cashier':
+        return 'Cashier';
+      case 'salesman':
+        return 'Salesman';
+      case 'stock_manager':
+        return 'Stock Manager';
+      case 'visitor':
+        return 'Demo Visitor';
+      default:
+        return 'Staff';
+    }
+  };
+
+  // Unified Staff / Employee Management (syncs with linked POS User)
   const saveEmployee = (employee: Employee) => {
     const idx = employees.findIndex((e) => e.id === employee.id);
     const updated =
       idx !== -1 ? employees.map((e, i) => (i === idx ? employee : e)) : [employee, ...employees];
     setEmployees(updated);
     DBStorage.saveEmployees(updated);
-    addAuditLog('EMPLOYEE_SAVED', 'Employees', `Saved employee profile ${employee.name} (${employee.designation})`);
+
+    if (employee.linked_user_id && hasPermission(activeUser, 'user_manage')) {
+      const uIdx = users.findIndex((u) => u.id === employee.linked_user_id);
+      if (uIdx !== -1) {
+        const linked = users[uIdx];
+        const nextUser: User = {
+          ...linked,
+          name: employee.name,
+          phone: employee.phone || linked.phone,
+          email: employee.email ?? linked.email,
+          active: employee.active,
+          updated_at: new Date().toISOString(),
+        };
+        const updatedUsers = users.map((u, i) => (i === uIdx ? nextUser : u));
+        setUsers(updatedUsers);
+        DBStorage.saveUsers(updatedUsers);
+        if (activeUser.id === nextUser.id) {
+          setActiveUser(nextUser);
+        }
+      }
+    }
+
+    addAuditLog('EMPLOYEE_SAVED', 'Employees', `Saved staff profile ${employee.name} (${employee.employee_code} · ${employee.designation})`);
+  };
+
+  // Atomic Unified Staff / Employee / Salesman Save (Employee Profile + Shift + Salary + POS Login App ID & Role)
+  const saveUnifiedStaff = async (
+    input: UnifiedStaffInput
+  ): Promise<{ employee: Employee; user?: User }> => {
+    const now = new Date().toISOString();
+    let savedUser: User | undefined;
+    let nextLinkedUserId = input.linkedUserId;
+
+    if (input.enablePosLogin && hasPermission(activeUser, 'user_manage')) {
+      const targetUserId = nextLinkedUserId || `user_${Date.now()}`;
+      const existingUser = users.find((u) => u.id === targetUserId);
+      const nextRole: UserRole = input.role || existingUser?.role || 'salesman';
+      const cleanUsername = (input.username || existingUser?.username || input.name)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]+/g, '_')
+        .replace(/^_+|_+$/g, '') || `staff_${Date.now().toString().slice(-4)}`;
+
+      let hashedPin = existingUser?.pin || '';
+      const rawPin = input.plainPin?.trim();
+      if (rawPin && rawPin.length >= 4) {
+        hashedPin = await hashPin(rawPin);
+      } else if (!isHashedPin(hashedPin)) {
+        hashedPin = await hashPin(rawPin || '1234');
+      }
+
+      const userRecord: User = {
+        id: targetUserId,
+        name: input.name.trim(),
+        username: cleanUsername,
+        pin: hashedPin,
+        must_change_pin:
+          rawPin && rawPin !== '1234'
+            ? false
+            : rawPin === '1234' && nextRole === 'admin'
+            ? true
+            : existingUser?.must_change_pin,
+        role: nextRole,
+        phone: input.phone.trim() || undefined,
+        email: input.email?.trim() || undefined,
+        active: input.active,
+        permissions:
+          existingUser && existingUser.role === nextRole && existingUser.permissions?.length
+            ? existingUser.permissions
+            : getPermissionsForRole(nextRole),
+        created_at: existingUser?.created_at || now,
+        updated_at: now,
+        sync_status: 'pending',
+        branch_id: store.branch_id,
+        device_id: store.device_id,
+      };
+
+      const uIdx = users.findIndex((u) => u.id === userRecord.id);
+      const nextUsers =
+        uIdx !== -1 ? users.map((u, i) => (i === uIdx ? userRecord : u)) : [...users, userRecord];
+      setUsers(nextUsers);
+      DBStorage.saveUsers(nextUsers);
+
+      if (activeUser.id === userRecord.id) {
+        setActiveUser(userRecord);
+        await createSignedSession(userRecord.id, userRecord.role);
+      }
+
+      savedUser = userRecord;
+      nextLinkedUserId = userRecord.id;
+    } else if (!input.enablePosLogin && nextLinkedUserId && hasPermission(activeUser, 'user_manage')) {
+      const targetUser = users.find((u) => u.id === nextLinkedUserId);
+      const isSoleAdmin =
+        targetUser?.role === 'admin' &&
+        users.filter((u) => u.role === 'admin' && u.active).length <= 1;
+      if (nextLinkedUserId !== 'user_admin' && nextLinkedUserId !== activeUser.id && !isSoleAdmin) {
+        const nextUsers = users.map((u) =>
+          u.id === nextLinkedUserId ? { ...u, active: false, updated_at: now } : u
+        );
+        setUsers(nextUsers);
+        DBStorage.saveUsers(nextUsers);
+      }
+      nextLinkedUserId = undefined;
+    }
+
+    const existingEmp =
+      (input.employeeId && employees.find((e) => e.id === input.employeeId)) ||
+      (nextLinkedUserId && employees.find((e) => e.linked_user_id === nextLinkedUserId)) ||
+      undefined;
+
+    const employeeRecord: Employee = {
+      id: existingEmp?.id || input.employeeId || `emp_${Date.now()}`,
+      employee_code: input.employeeCode.trim() || existingEmp?.employee_code || getNextEmployeeCode(employees),
+      name: input.name.trim(),
+      designation:
+        input.designation.trim() ||
+        (savedUser ? roleToDesignation(savedUser.role) : existingEmp?.designation || 'Salesman / Staff'),
+      department: input.department?.trim() || existingEmp?.department || 'Sales & POS',
+      phone: input.phone.trim(),
+      email: input.email?.trim() || undefined,
+      address: input.address?.trim() || undefined,
+      nid_number: input.nidNumber?.trim() || undefined,
+      joining_date: input.joiningDate || existingEmp?.joining_date || now.slice(0, 10),
+      basic_salary: Number.isFinite(input.basicSalary) ? input.basicSalary : 0,
+      linked_user_id: nextLinkedUserId || undefined,
+      shift: input.shift,
+      shift_label: input.shiftLabel || existingEmp?.shift_label,
+      shift_start: input.shiftStart,
+      shift_end: input.shiftEnd,
+      active: input.active,
+      created_at: existingEmp?.created_at || now,
+      updated_at: now,
+    };
+
+    const eIdx = employees.findIndex((e) => e.id === employeeRecord.id);
+    const nextEmployees =
+      eIdx !== -1
+        ? employees.map((e, i) => (i === eIdx ? employeeRecord : e))
+        : [employeeRecord, ...employees];
+    setEmployees(nextEmployees);
+    DBStorage.saveEmployees(nextEmployees);
+
+    addAuditLog(
+      'STAFF_SAVED',
+      'Staff & Employees',
+      `Saved unified staff ${employeeRecord.name} (${employeeRecord.employee_code}${
+        savedUser ? ` · @${savedUser.username} · ${savedUser.role}` : ''
+      })`
+    );
+
+    return { employee: employeeRecord, user: savedUser };
   };
 
   const markAttendance = (data: {
@@ -2468,20 +2658,85 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       await createSignedSession(userToSave.id, userToSave.role);
     }
 
-    addAuditLog('USER_SAVED', 'Users', `Saved User ${userToSave.name} (@${userToSave.username}, ${userToSave.role})`);
+    // Keep unified Employee record synchronized for every non-visitor Staff/Salesman
+    if (userToSave.role !== 'visitor') {
+      const nowIso = new Date().toISOString();
+      const linkedIdx = employees.findIndex((e) => e.linked_user_id === userToSave.id);
+      let nextEmployees: Employee[];
+      if (linkedIdx !== -1) {
+        const cur = employees[linkedIdx];
+        nextEmployees = employees.map((e, i) =>
+          i === linkedIdx
+            ? {
+                ...cur,
+                name: userToSave.name,
+                phone: userToSave.phone || cur.phone,
+                email: userToSave.email ?? cur.email,
+                active: userToSave.active,
+                updated_at: nowIso,
+              }
+            : e
+        );
+      } else {
+        const newEmp: Employee = {
+          id: `emp_${userToSave.id}`,
+          employee_code: getNextEmployeeCode(employees),
+          name: userToSave.name,
+          designation: roleToDesignation(userToSave.role),
+          department: userToSave.role === 'admin' ? 'Management' : 'Sales & POS',
+          phone: userToSave.phone || '',
+          email: userToSave.email,
+          joining_date: nowIso.slice(0, 10),
+          basic_salary: 0,
+          linked_user_id: userToSave.id,
+          shift: 'full_day',
+          shift_label: 'Full Day',
+          shift_start: '09:00',
+          shift_end: '21:00',
+          active: userToSave.active,
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+        nextEmployees = [newEmp, ...employees];
+      }
+      setEmployees(nextEmployees);
+      DBStorage.saveEmployees(nextEmployees);
+    }
+
+    addAuditLog('USER_SAVED', 'Users', `Saved Staff/User ${userToSave.name} (@${userToSave.username}, ${userToSave.role})`);
   };
 
-  // Delete User / Salesman (RBAC protected)
+  // Delete User / Salesman (RBAC protected & synced with linked Employee)
   const deleteUser = (userId: string) => {
     if (!hasPermission(activeUser, 'user_manage')) {
       addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked user deletion attempt by ${activeUser.name}`);
       return;
     }
     const target = users.find((u) => u.id === userId);
-    if (!target || target.id === 'user_admin' || target.id === activeUser.id) return;
+    const activeAdminCount = users.filter((u) => u.role === 'admin' && u.active).length;
+    if (
+      !target ||
+      target.id === 'user_admin' ||
+      target.id === activeUser.id ||
+      (target.role === 'admin' && activeAdminCount <= 1)
+    ) {
+      return;
+    }
     const updated = users.filter((u) => u.id !== userId);
     setUsers(updated);
     DBStorage.saveUsers(updated);
+
+    // Sync linked Employee record (deactivate & unlink cleanly while preserving payroll/attendance history)
+    if (employees.some((e) => e.linked_user_id === userId)) {
+      const nextEmployees = employees.map((e) =>
+        e.linked_user_id === userId
+          ? { ...e, linked_user_id: undefined, active: false, updated_at: new Date().toISOString() }
+          : e
+      );
+      setEmployees(nextEmployees);
+      DBStorage.saveEmployees(nextEmployees);
+    }
+
     addAuditLog('USER_DELETED', 'Users', `Removed staff/salesman ${target.name} (@${target.username})`);
   };
 
@@ -2551,13 +2806,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
 
-    // 3. Lookup active user strictly in stored directory (NO hardcoded fallback user creation!)
+    // 3. Lookup active user strictly in stored directory (by App ID, @AppID, Employee ID, Name, or Phone)
+    const normalizedId = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
     const normalizedPhone = trimmed.replace(/[\s\-+]/g, '');
+    const matchedEmployee =
+      employees.find(
+        (e) =>
+          e.active &&
+          Boolean(e.linked_user_id) &&
+          e.employee_code.trim().toLowerCase() === normalizedId
+      ) ||
+      employees.find(
+        (e) =>
+          Boolean(e.linked_user_id) &&
+          e.employee_code.trim().toLowerCase() === normalizedId
+      );
+
     const foundUser = users.find(
       (u) =>
         u.id.toLowerCase() === trimmed ||
         u.username.toLowerCase() === trimmed ||
+        u.username.toLowerCase() === normalizedId ||
         u.name.toLowerCase() === trimmed ||
+        (matchedEmployee && u.id === matchedEmployee.linked_user_id) ||
         (u.phone && normalizedPhone.length >= 6 && u.phone.replace(/[\s\-+]/g, '') === normalizedPhone)
     );
 
@@ -2607,6 +2878,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // 5. Issue HMAC-Signed Session Token with Expiration & Idle Timeout
     await clearLoginAttempts(trimmed);
     await createSignedSession(foundUser.id, foundUser.role);
+    saveLoggedInAccount(foundUser, employees);
 
     setActiveUser(foundUser);
     setIsAuthenticated(true);
@@ -2619,6 +2891,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const logout = () => {
     const actorName = activeUser?.name || 'User';
+    if (activeUser && activeUser.id && activeUser.id !== DEFAULT_BOOT_USER.id) {
+      saveLoggedInAccount(activeUser, employees);
+    }
     setIsAuthenticated(false);
     setActiveUser(DEFAULT_BOOT_USER);
     setCachedToken(null);
@@ -2628,6 +2903,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const lockTerminal = () => {
     const actorName = activeUser?.name || 'User';
+    if (activeUser && activeUser.id && activeUser.id !== DEFAULT_BOOT_USER.id) {
+      saveLoggedInAccount(activeUser, employees);
+    }
     setIsAuthenticated(false);
     void clearSignedSession();
     addAuditLog('TERMINAL_LOCKED', 'Auth', `Terminal locked by ${actorName}.`);
@@ -2652,12 +2930,81 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     refreshData();
   };
 
+  const setupOwnerAccount = async (input: {
+    storeName?: string;
+    name: string;
+    username: string;
+    pin: string;
+    phone?: string;
+  }): Promise<{ success: boolean; message?: string }> => {
+    if (users.length > 0) {
+      return { success: false, message: 'Owner account already exists. Please sign in.' };
+    }
+    const cleanName = input.name.trim();
+    const cleanUsername = input.username.trim().toLowerCase().replace(/^@/, '').replace(/\s+/g, '');
+    const cleanPin = input.pin.trim();
+    if (!cleanName) {
+      return { success: false, message: 'অনুগ্রহ করে মালিকের নাম লিখুন (Owner name is required).' };
+    }
+    if (!cleanUsername) {
+      return { success: false, message: 'অনুগ্রহ করে App ID লিখুন (App ID is required).' };
+    }
+    if (cleanPin.length < 4) {
+      return { success: false, message: 'পাসওয়ার্ড বা পিন কমপক্ষে ৪ অক্ষরের হতে হবে (Minimum 4 characters).' };
+    }
+
+    const now = new Date().toISOString();
+    const hashedPin = await hashPin(cleanPin);
+    const ownerUser: User = {
+      id: `user_owner_${Date.now()}`,
+      name: cleanName,
+      username: cleanUsername,
+      pin: hashedPin,
+      must_change_pin: false,
+      role: 'admin',
+      phone: input.phone?.trim() || '',
+      active: true,
+      permissions: getPermissionsForRole('admin'),
+      created_at: now,
+      updated_at: now,
+      sync_status: 'pending',
+      branch_id: store.branch_id,
+      device_id: store.device_id,
+    };
+
+    const nextStoreName = input.storeName?.trim();
+    if (nextStoreName) {
+      const updatedStore: StoreSettings = {
+        ...store,
+        store_name: nextStoreName,
+        seller_name: cleanName,
+        updated_at: now,
+      };
+      setStore(updatedStore);
+      DBStorage.saveStore(updatedStore);
+    }
+
+    const nextUsers = [ownerUser];
+    setUsers(nextUsers);
+    DBStorage.saveUsers(nextUsers);
+    await createSignedSession(ownerUser.id, ownerUser.role);
+    saveLoggedInAccount(ownerUser, employees);
+    setActiveUser(ownerUser);
+    setIsAuthenticated(true);
+    setActiveTabState('pos');
+    addAuditLog('OWNER_CREATED', 'Auth', `Created Store Owner account ${ownerUser.name} (@${ownerUser.username}).`);
+    return { success: true };
+  };
+
   const resetToDemoData = async () => {
     if (activeUser.role !== 'admin' || !hasPermission(activeUser, 'backup_manage')) {
       addAuditLog('UNAUTHORIZED_ACTION', 'Security', `Blocked resetToDemoData by ${activeUser.name}`);
       return;
     }
     await DBStorage.resetToSeedData();
+    setIsAuthenticated(false);
+    setActiveUser(DEFAULT_BOOT_USER);
+    setCachedToken(null);
     refreshData();
   };
 
@@ -2669,7 +3016,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   if (!isStorageReady) {
     return (
       <div className="min-h-screen bg-[#f4f6fb] flex items-center justify-center p-6">
-        <div className="bg-white border border-slate-200 rounded-2xl px-6 py-5 shadow-sm flex items-center gap-3 text-slate-700 text-xs font-semibold">
+        <div className="pos-fade-in bg-white border border-slate-200 rounded-2xl px-6 py-5 shadow-sm flex items-center gap-3 text-slate-700 text-xs font-semibold">
           <div className="w-4 h-4 rounded-full border-2 border-[#6666f1] border-t-transparent animate-spin" />
           <span>Unlocking encrypted store vault...</span>
         </div>
@@ -2761,6 +3108,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         saveFinancialAccount,
         recordFinancialAccountTx,
         saveEmployee,
+        saveUnifiedStaff,
         markAttendance,
         payEmployeeSalary,
         addAuditLog,
@@ -2769,6 +3117,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isStorageReady,
         requiresPinChange,
         loginWithPin,
+        setupOwnerAccount,
         changeOwnPin,
         checkPermission,
         logout,

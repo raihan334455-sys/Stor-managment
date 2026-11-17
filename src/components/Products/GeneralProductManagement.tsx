@@ -640,7 +640,7 @@ export const GeneralProductManagement: React.FC<{ initialTab?: GeneralSubTab }> 
   }
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 space-y-5">
+    <div className="p-4 sm:p-6 bg-slate-50 min-h-full w-full text-slate-800 space-y-5">
       {/* Header + Module ON/OFF Toggle */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
         <div className="flex items-center gap-3">

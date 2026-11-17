@@ -74,10 +74,10 @@ const TAB_LABELS: Record<string, { en: string; bn: string }> = {
   accounts: { en: 'Accounts Management', bn: 'অ্যাকাউন্টস' },
   expenses: { en: 'Shop Expenses', bn: 'দোকানের খরচ' },
   cash: { en: 'Cash Drawer & Shift', bn: 'ক্যাশ ড্রয়ার' },
-  employees: { en: 'Employees', bn: 'কর্মচারী' },
+  employees: { en: 'Staff, Employees & Salesman', bn: 'স্টাফ, কর্মচারী ও সেলসম্যান' },
   quotations: { en: 'Quotations', bn: 'কোটেশন' },
   reports: { en: 'Reports & P/L', bn: 'রিপোর্টস' },
-  users: { en: 'Users & Roles', bn: 'ইউজার ও রোল' },
+  users: { en: 'Salesman Login & Roles', bn: 'সেলসম্যান লগইন ও রোল' },
   settings: { en: 'Store Settings', bn: 'সেটিংস' },
   backup: { en: 'Backup & Cloud Sync', bn: 'ব্যাকআপ ও ক্লাউড' },
   drive: { en: 'Google Drive Sync', bn: 'গুগল ড্রাইভ' },
@@ -766,18 +766,21 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
 
-            <div className="space-y-2 max-h-56 overflow-y-auto">
+            <div className="space-y-2 max-h-64 overflow-y-auto">
               {users
                 .filter((u) => demoEnabled || u.role !== 'visitor')
                 .map((u) => {
                   const isSelected = selectedUser?.id === u.id;
                   const isActiveNow = activeUser.id === u.id;
+                  const linkedEmp =
+                    employees.find((e) => e.linked_user_id === u.id && e.active) ||
+                    employees.find((e) => e.linked_user_id === u.id);
                   return (
                     <button
                       key={u.id}
                       type="button"
                       onClick={() => handleSwitchUserClick(u)}
-                      className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-colors cursor-pointer ${
+                      className={`w-full p-3 rounded-xl border text-left flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                         isSelected
                           ? 'bg-emerald-50 border-emerald-500 text-slate-900'
                           : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -787,17 +790,30 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
                           {u.name.charAt(0)}
                         </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-slate-900 flex items-center gap-2 truncate">
+                        <div className="min-w-0 space-y-1">
+                          <div className="text-sm font-semibold text-slate-900 flex items-center gap-1.5 flex-wrap">
                             <span className="truncate">{u.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700 font-semibold capitalize shrink-0">
+                              {u.role}
+                            </span>
                             {isActiveNow && (
                               <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
                                 CURRENT
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-slate-500 capitalize">
-                            {u.role} · <span className="font-mono lowercase">@{u.username}</span>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200/80 text-indigo-700 font-mono font-semibold">
+                              Emp ID: {linkedEmp ? linkedEmp.employee_code : 'N/A'}
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 font-mono font-medium">
+                              App ID: @{u.username}
+                            </span>
+                            {linkedEmp?.shift_label && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200/80 text-amber-800 font-medium">
+                                {linkedEmp.shift_label}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -807,43 +823,62 @@ export const Header: React.FC<HeaderProps> = ({
                 })}
             </div>
 
-            {selectedUser && (
-              <form onSubmit={handlePinSubmit} className="space-y-3 pt-3 border-t border-slate-100">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                    <Lock className="w-3.5 h-3.5 text-amber-600" />
-                    Password / PIN for {selectedUser.name}:
-                  </label>
-                  <input
-                    type="password"
-                    maxLength={24}
-                    autoFocus
-                    value={enteredPin}
-                    onChange={(e) => setEnteredPin(e.target.value)}
-                    placeholder="Enter Password or PIN"
-                    className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-center text-base tracking-widest font-mono text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                  {pinError && <p className="text-xs text-rose-600 mt-1 font-medium">{pinError}</p>}
-                </div>
+            {selectedUser && (() => {
+              const selectedEmp =
+                employees.find((e) => e.linked_user_id === selectedUser.id && e.active) ||
+                employees.find((e) => e.linked_user_id === selectedUser.id);
+              return (
+                <form onSubmit={handlePinSubmit} className="space-y-3 pt-3 border-t border-slate-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    <span className="font-semibold text-slate-700 truncate">{selectedUser.name}</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {selectedEmp && (
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 font-mono font-semibold">
+                          Emp ID: {selectedEmp.employee_code}
+                        </span>
+                      )}
+                      <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 font-mono font-semibold">
+                        App ID: @{selectedUser.username}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <Lock className="w-3.5 h-3.5 text-amber-600" />
+                      Password / PIN for {selectedUser.name}:
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={24}
+                      autoFocus
+                      value={enteredPin}
+                      onChange={(e) => setEnteredPin(e.target.value)}
+                      placeholder="Enter Password or PIN"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-center text-base tracking-widest font-mono text-slate-900 focus:outline-none focus:border-emerald-500"
+                    />
+                    {pinError && <p className="text-xs text-rose-600 mt-1 font-medium">{pinError}</p>}
+                  </div>
 
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowUserModal(false)}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <KeyRound className="w-4 h-4" />
-                    <span>Confirm Switch</span>
-                  </button>
-                </div>
-              </form>
-            )}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowUserModal(false)}
+                      className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSwitchingUser}
+                      className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <KeyRound className="w-4 h-4" />
+                      <span>{isSwitchingUser ? 'Switching...' : 'Confirm Switch'}</span>
+                    </button>
+                  </div>
+                </form>
+              );
+            })()}
           </div>
         </div>
       )}

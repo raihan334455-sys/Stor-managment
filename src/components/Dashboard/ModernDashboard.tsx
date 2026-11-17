@@ -325,7 +325,7 @@ export const ModernDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="p-3 sm:p-5 lg:p-6 bg-slate-50 min-h-full text-slate-800 space-y-5 max-w-[1440px] mx-auto">
+    <div className="p-3 sm:p-5 lg:p-6 bg-slate-50 min-h-full w-full text-slate-800 space-y-5">
       {/* 1. COMPACT STORE ACTION BAR (No oversized banner) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4">
         <div className="min-w-0">
